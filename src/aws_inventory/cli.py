@@ -20,7 +20,7 @@ def print_progress(service: str, status: str) -> None:
 @click.command()
 @click.option('--profile', '-p', default=None, help='AWS profile name to use')
 @click.option('--region', '-r', multiple=True, help='AWS region(s) to scan (can be specified multiple times)')
-@click.option('--service', '-s', multiple=True, help='Service(s) to scan (can be specified multiple times)')
+@click.option('--services', '-s', multiple=True, help='Service(s) to scan (can be specified multiple times)')
 @click.option('--format', '-f', 'output_format', type=click.Choice(['json', 'csv', 'html']), default='html', help='Output format')
 @click.option('--output', '-o', 'output_file', default=None, help='Output file path (auto-generated if not specified)')
 @click.option('--workers', '-w', default=40, type=int, help='Maximum parallel workers (default: 40)')
@@ -32,7 +32,7 @@ def print_progress(service: str, status: str) -> None:
 def main(
     profile: Optional[str],
     region: tuple,
-    service: tuple,
+    services: tuple,
     output_format: str,
     output_file: Optional[str],
     workers: int,
@@ -110,9 +110,9 @@ def main(
             regions_list.extend([x.strip() for x in r.split(',')])
 
     services_list: Optional[List[str]] = None
-    if service:
+    if services:
         services_list = []
-        for s in service:
+        for s in services:
             services_list.extend([x.strip() for x in s.split(',')])
 
     # Run collection

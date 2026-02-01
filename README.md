@@ -107,7 +107,7 @@ awsmap -p myprofile --timings
 |--------|-------------|
 | `-p, --profile` | AWS profile name |
 | `-r, --region` | Region(s) to scan (comma-separated or multiple flags) |
-| `-s, --service` | Service(s) to scan (comma-separated or multiple flags) |
+| `-s, --services` | Service(s) to scan (comma-separated or multiple flags) |
 | `-t, --tag` | Filter by tag Key=Value (multiple allowed) |
 | `-f, --format` | Output format: `html` (default), `json`, `csv` |
 | `-o, --output` | Output file path |
