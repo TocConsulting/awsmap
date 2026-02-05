@@ -272,26 +272,23 @@ awsmap -p myprofile -r us-east-1,eu-west-1
 
 ## IAM Permissions
 
-Minimum required: read-only access to services you want to inventory.
+awsmap requires read-only access to the AWS services you want to inventory.
 
-**Recommended:** Use AWS managed policy `ReadOnlyAccess` or:
+**Recommended:** Attach the AWS managed [`ReadOnlyAccess`](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/ReadOnlyAccess.html) policy to your IAM user or role. This policy is maintained by AWS and provides read access across all services.
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "*:Describe*",
-        "*:List*",
-        "*:Get*"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
+```bash
+# Attach to a role
+aws iam attach-role-policy \
+  --role-name YourRoleName \
+  --policy-arn arn:aws:iam::aws:policy/ReadOnlyAccess
+
+# Attach to a user
+aws iam attach-user-policy \
+  --user-name YourUserName \
+  --policy-arn arn:aws:iam::aws:policy/ReadOnlyAccess
 ```
+
+For more restrictive access, you can create a custom policy with explicit read actions for specific services (e.g., `ec2:Describe*`, `s3:List*`, `s3:Get*`). See the [IAM Actions Reference](https://docs.aws.amazon.com/service-authorization/latest/reference/reference_policies_actions-resources-contextkeys.html) for service-specific actions.
 
 ## What's NOT Collected
 
