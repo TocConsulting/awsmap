@@ -132,7 +132,29 @@ def format_html(data: Dict[str, Any]) -> str:
             tag_options.append(f'<option value="{esc(k)}={esc(v)}">{esc(k)}={esc(v)}</option>')
     tag_options_html = '\n'.join(tag_options)
 
+    # Detail value formatter
+    def format_detail_value(value):
+        if value is None:
+            return '<span class="detail-value null-value">&mdash;</span>'
+        if isinstance(value, bool):
+            cls = 'bool-true' if value else 'bool-false'
+            text = 'Yes' if value else 'No'
+            return f'<span class="detail-value {cls}">{text}</span>'
+        if isinstance(value, list):
+            if not value:
+                return '<span class="detail-value null-value">&mdash;</span>'
+            items = ''.join(f'<span class="detail-list-item">{esc(str(item))}</span>' for item in value)
+            return f'<span class="detail-value"><span class="detail-list">{items}</span></span>'
+        if isinstance(value, dict):
+            return f'<span class="detail-value">{esc(json.dumps(value, default=str))}</span>'
+        return f'<span class="detail-value">{esc(str(value))}</span>'
+
+    # Detail key formatter: snake_case -> Title Case
+    def format_detail_key(key):
+        return key.replace('_', ' ').title()
+
     # Build service sections
+    num_columns = 5  # Type, Name, ID/ARN, Region, Tags
     service_sections = []
     for service_name in sorted(services.keys()):
         service_resources = services[service_name]
@@ -157,13 +179,39 @@ def format_html(data: Dict[str, Any]) -> str:
             tags_data = '|'.join(f"{esc(k)}={esc(v)}" for k, v in tags.items()) if tags else ''
             region_val = r.get('region', 'global') or 'global'
 
+            details = r.get('details', {})
+            has_details = bool(details)
+
+            # Main resource row
+            detail_attrs = ''
+            if has_details:
+                detail_text = ' '.join(str(v) for v in details.values()).lower()
+                detail_text = ''.join(c if c >= ' ' else ' ' for c in detail_text)
+                detail_attrs = f' data-has-details="true" data-details="{esc(detail_text)}" onclick="toggleDetails(this)"'
+
             rows.append(f'''
-                <tr data-service="{esc(service_name)}" data-region="{esc(region_val)}" data-name="{esc(str(r.get('name', '')).lower())}" data-id="{esc(str(r.get('id', '')).lower())}" data-tags="{tags_data}">
+                <tr data-service="{esc(service_name)}" data-region="{esc(region_val)}" data-name="{esc(str(r.get('name', '')).lower())}" data-id="{esc(str(r.get('id', '')).lower())}" data-tags="{tags_data}"{detail_attrs}>
                     <td>{esc(r.get('type', ''))}</td>
                     <td>{esc(r.get('name', '') or r.get('id', ''))}</td>
-                    <td class="resource-id" title="Click to copy ARN" onclick="copyToClipboard(this)">{esc(r.get('arn', '') or r.get('id', ''))}</td>
+                    <td class="resource-id" title="Click to copy ARN" onclick="event.stopPropagation(); copyToClipboard(this)">{esc(r.get('arn', '') or r.get('id', ''))}</td>
                     <td><span class="region-badge" data-region="{esc(region_val)}">{esc(region_val)}</span></td>
                     <td class="tags-cell">{tag_badges}{all_tags_html}</td>
+                </tr>
+            ''')
+
+            # Detail row (hidden by default)
+            if has_details:
+                detail_items = ''.join(
+                    f'<div class="detail-item"><span class="detail-key">{esc(format_detail_key(k))}</span>{format_detail_value(v)}</div>'
+                    for k, v in details.items()
+                )
+                rows.append(f'''
+                <tr class="details-row collapsed">
+                    <td colspan="{num_columns}">
+                        <div class="details-panel">
+                            <div class="details-grid">{detail_items}</div>
+                        </div>
+                    </td>
                 </tr>
             ''')
 
@@ -611,6 +659,115 @@ def format_html(data: Dict[str, Any]) -> str:
             margin-bottom: 4px;
         }}
 
+        /* Detail rows */
+        .details-row {{
+            background: var(--bg);
+        }}
+
+        .details-row.collapsed {{
+            display: none;
+        }}
+
+        .details-row:hover {{
+            background: var(--bg);
+        }}
+
+        .details-row td {{
+            padding: 0;
+            border-bottom: 1px solid var(--border);
+        }}
+
+        .details-panel {{
+            padding: 16px 24px;
+        }}
+
+        .details-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 8px 24px;
+        }}
+
+        .detail-item {{
+            display: flex;
+            gap: 8px;
+            padding: 4px 0;
+        }}
+
+        .detail-key {{
+            color: var(--text-muted);
+            font-size: 0.85em;
+            min-width: 120px;
+            flex-shrink: 0;
+        }}
+
+        .detail-value {{
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 0.85em;
+            word-break: break-all;
+        }}
+
+        .detail-value.bool-true {{
+            color: #16a34a;
+        }}
+
+        .detail-value.bool-false {{
+            color: #dc2626;
+        }}
+
+        .dark .detail-value.bool-true {{
+            color: #4ade80;
+        }}
+
+        .dark .detail-value.bool-false {{
+            color: #f87171;
+        }}
+
+        .detail-value.null-value {{
+            color: var(--text-muted);
+            font-style: italic;
+        }}
+
+        .detail-list {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }}
+
+        .detail-list-item {{
+            display: inline-block;
+            padding: 2px 8px;
+            background: var(--border);
+            border-radius: 10px;
+            font-size: 0.85em;
+        }}
+
+        mark {{ background: #fef08a; color: #1e293b; padding: 1px 2px; border-radius: 2px; }}
+        .dark mark {{ background: #854d0e; color: #fef3c7; }}
+
+        tr[data-has-details] {{
+            cursor: pointer;
+        }}
+
+        tr[data-has-details] td:first-child {{
+            position: relative;
+            padding-left: 28px;
+        }}
+
+        tr[data-has-details] td:first-child::before {{
+            content: '\\25B6';
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.65em;
+            color: var(--text-muted);
+            transition: transform 0.2s;
+        }}
+
+        tr[data-has-details].expanded td:first-child::before {{
+            transform: translateY(-50%) rotate(90deg);
+        }}
+
         .hidden {{ display: none !important; }}
 
         .toast {{
@@ -661,6 +818,8 @@ def format_html(data: Dict[str, Any]) -> str:
         @media print {{
             .controls, .theme-toggle, .export-btns, .toggle-icon {{ display: none; }}
             .service-content.collapsed {{ display: block; }}
+            .details-row.collapsed {{ display: table-row; }}
+            tr[data-has-details] td:first-child::before {{ content: none; }}
             body {{ background: white; }}
         }}
     </style>
@@ -713,7 +872,7 @@ def format_html(data: Dict[str, Any]) -> str:
 
         <div class="controls">
             <div class="controls-row">
-                <input type="text" class="search-box" id="searchBox" placeholder="Search resources..." onkeyup="filterResources()">
+                <input type="text" class="search-box" id="searchBox" placeholder="Search resources..." onkeyup="debouncedFilter()">
                 <select class="filter-select" id="serviceFilter" onchange="filterResources()">
                     <option value="">All Services</option>
                     {service_options}
@@ -760,6 +919,48 @@ def format_html(data: Dict[str, Any]) -> str:
             document.getElementById('theme-icon').innerHTML = '&#x2600;';
         }}
 
+        function highlightMatches(element, term, selector) {{
+            clearHighlights(element);
+            if (!term) return;
+            element.querySelectorAll(selector || '.detail-value').forEach(node => {{
+                const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+                const textNodes = [];
+                while (walker.nextNode()) textNodes.push(walker.currentNode);
+                textNodes.forEach(textNode => {{
+                    const text = textNode.nodeValue;
+                    const lower = text.toLowerCase();
+                    const termLower = term.toLowerCase();
+                    const frag = document.createDocumentFragment();
+                    let lastIdx = 0, idx, found = false;
+                    while ((idx = lower.indexOf(termLower, lastIdx)) !== -1) {{
+                        found = true;
+                        if (idx > lastIdx) frag.appendChild(document.createTextNode(text.substring(lastIdx, idx)));
+                        const mark = document.createElement('mark');
+                        mark.textContent = text.substring(idx, idx + term.length);
+                        frag.appendChild(mark);
+                        lastIdx = idx + term.length;
+                    }}
+                    if (!found) return;
+                    if (lastIdx < text.length) frag.appendChild(document.createTextNode(text.substring(lastIdx)));
+                    textNode.parentNode.replaceChild(frag, textNode);
+                }});
+            }});
+        }}
+
+        function clearHighlights(element) {{
+            element.querySelectorAll('mark').forEach(mark => {{
+                const parent = mark.parentNode;
+                parent.replaceChild(document.createTextNode(mark.textContent), mark);
+                parent.normalize();
+            }});
+        }}
+
+        let debounceTimer;
+        function debouncedFilter() {{
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(filterResources, 300);
+        }}
+
         function toggleSection(header) {{
             const content = header.nextElementSibling;
             const icon = header.querySelector('.toggle-icon');
@@ -770,11 +971,23 @@ def format_html(data: Dict[str, Any]) -> str:
         function expandAll() {{
             document.querySelectorAll('.service-content').forEach(c => c.classList.remove('collapsed'));
             document.querySelectorAll('.toggle-icon').forEach(i => i.textContent = '-');
+            document.querySelectorAll('.details-row').forEach(r => r.classList.remove('collapsed'));
+            document.querySelectorAll('tr[data-has-details]').forEach(r => r.classList.add('expanded'));
         }}
 
         function collapseAll() {{
             document.querySelectorAll('.service-content').forEach(c => c.classList.add('collapsed'));
             document.querySelectorAll('.toggle-icon').forEach(i => i.textContent = '+');
+            document.querySelectorAll('.details-row').forEach(r => r.classList.add('collapsed'));
+            document.querySelectorAll('tr[data-has-details]').forEach(r => r.classList.remove('expanded'));
+        }}
+
+        function toggleDetails(row) {{
+            const detailRow = row.nextElementSibling;
+            if (detailRow && detailRow.classList.contains('details-row')) {{
+                detailRow.classList.toggle('collapsed');
+                row.classList.toggle('expanded');
+            }}
         }}
 
         function filterResources() {{
@@ -791,7 +1004,7 @@ def format_html(data: Dict[str, Any]) -> str:
                 }}
 
                 let hasVisible = false;
-                section.querySelectorAll('tbody tr').forEach(row => {{
+                section.querySelectorAll('tbody tr:not(.details-row)').forEach(row => {{
                     const rowService = row.dataset.service;
                     const rowRegion = row.dataset.region;
                     const rowName = row.dataset.name;
@@ -800,18 +1013,62 @@ def format_html(data: Dict[str, Any]) -> str:
 
                     const matchService = !service || rowService === service;
                     const matchRegion = !region || rowRegion === region;
-                    const matchSearch = !search || rowName.includes(search) || rowId.includes(search);
+                    const detailText = row.dataset.details || '';
+                    const matchSearch = !search || rowName.includes(search) || rowId.includes(search) || detailText.includes(search);
                     const matchTag = !tag || rowTags.split('|').includes(tag);
+
+                    const matchedInName = search && (rowName.includes(search) || rowId.includes(search));
+                    const matchedInDetails = search && detailText.includes(search);
 
                     if (matchService && matchRegion && matchSearch && matchTag) {{
                         row.classList.remove('hidden');
                         hasVisible = true;
+                        if (search) {{
+                            highlightMatches(row, search, 'td:nth-child(-n+3)');
+                        }} else {{
+                            clearHighlights(row);
+                        }}
+                        const detailRow = row.nextElementSibling;
+                        if (detailRow && detailRow.classList.contains('details-row')) {{
+                            detailRow.classList.remove('hidden');
+                            if (matchedInDetails) {{
+                                detailRow.classList.remove('collapsed');
+                                row.classList.add('expanded');
+                                row.dataset.autoExpanded = 'true';
+                                highlightMatches(detailRow, search);
+                            }} else if (row.dataset.autoExpanded) {{
+                                detailRow.classList.add('collapsed');
+                                row.classList.remove('expanded');
+                                delete row.dataset.autoExpanded;
+                                clearHighlights(detailRow);
+                            }}
+                        }}
                     }} else {{
                         row.classList.add('hidden');
+                        clearHighlights(row);
+                        const detailRow = row.nextElementSibling;
+                        if (detailRow && detailRow.classList.contains('details-row')) {{
+                            detailRow.classList.add('hidden');
+                            clearHighlights(detailRow);
+                        }}
+                        if (row.dataset.autoExpanded) {{
+                            delete row.dataset.autoExpanded;
+                        }}
                     }}
                 }});
 
                 section.classList.toggle('hidden', !hasVisible);
+                const content = section.querySelector('.service-content');
+                const icon = section.querySelector('.toggle-icon');
+                if (hasVisible && search) {{
+                    content.classList.remove('collapsed');
+                    if (icon) icon.textContent = '-';
+                    section.dataset.autoExpanded = 'true';
+                }} else if (!search && section.dataset.autoExpanded) {{
+                    content.classList.add('collapsed');
+                    if (icon) icon.textContent = '+';
+                    delete section.dataset.autoExpanded;
+                }}
             }});
         }}
 
@@ -856,7 +1113,7 @@ def format_html(data: Dict[str, Any]) -> str:
 
         function exportCSV() {{
             let csv = 'Service,Type,Name,ID/ARN,Region\\n';
-            document.querySelectorAll('tbody tr:not(.hidden)').forEach(row => {{
+            document.querySelectorAll('tbody tr:not(.hidden):not(.details-row)').forEach(row => {{
                 const cells = row.querySelectorAll('td');
                 const data = [
                     row.dataset.service,
