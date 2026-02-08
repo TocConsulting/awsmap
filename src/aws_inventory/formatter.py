@@ -550,7 +550,7 @@ def format_html(data: Dict[str, Any]) -> str:
             color: var(--text-muted);
             cursor: pointer;
             max-width: 500px;
-            word-break: break-all;
+            overflow-wrap: break-word;
             line-height: 1.4;
             position: relative;
             padding-right: 24px;
@@ -691,6 +691,8 @@ def format_html(data: Dict[str, Any]) -> str:
             display: flex;
             gap: 8px;
             padding: 4px 0;
+            min-width: 0;
+            overflow: hidden;
         }}
 
         .detail-key {{
@@ -703,7 +705,8 @@ def format_html(data: Dict[str, Any]) -> str:
         .detail-value {{
             font-family: 'SF Mono', Monaco, monospace;
             font-size: 0.85em;
-            word-break: break-all;
+            overflow-wrap: break-word;
+            min-width: 0;
         }}
 
         .detail-value.bool-true {{
