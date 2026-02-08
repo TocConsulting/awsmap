@@ -47,6 +47,32 @@ _service_progress = {}
 _service_timings = {}
 
 
+def validate_services(services: List[str]) -> None:
+    """
+    Validate that all requested service names have collectors.
+
+    Args:
+        services: List of service names to validate
+
+    Raises:
+        ValueError: If any service name is unknown
+    """
+    from difflib import get_close_matches
+    available = set(get_available_services())
+    unknown = [s for s in services if s.lower() not in available]
+    if unknown:
+        msgs = []
+        for s in unknown:
+            matches = get_close_matches(s.lower(), sorted(available), n=3, cutoff=0.5)
+            msg = f"Unknown service '{s}'"
+            if matches:
+                msg += f". Did you mean: {', '.join(matches)}?"
+            msgs.append(msg)
+        raise ValueError(
+            '\n'.join(msgs) + '\n\nUse --list-services to see all available collectors.'
+        )
+
+
 def get_collector_function(service_name: str) -> Optional[Callable]:
     """
     Dynamically import and return the collector function for a service.
@@ -303,20 +329,28 @@ def collect_all(
     # Determine services to collect
     if services:
         service_list = [s.lower() for s in services]
+        validate_services(service_list)
     else:
         service_list = get_available_services()
 
-    # Filter to only available collectors
-    available_collectors = []
-    for service in service_list:
-        if get_collector_function(service):
-            available_collectors.append(service)
-
-    service_list = sorted(available_collectors)
+    service_list = sorted(service_list)
 
     # Determine regions
     if regions:
         region_list = regions
+        # Validate requested regions
+        enabled = get_enabled_regions(session)
+        unknown_regions = [r for r in region_list if r not in enabled]
+        if unknown_regions:
+            from difflib import get_close_matches
+            msgs = []
+            for r in unknown_regions:
+                matches = get_close_matches(r, enabled, n=3, cutoff=0.5)
+                msg = f"Unknown or disabled region '{r}'"
+                if matches:
+                    msg += f". Did you mean: {', '.join(matches)}?"
+                msgs.append(msg)
+            raise ValueError('\n'.join(msgs))
     else:
         region_list = get_enabled_regions(session)
 

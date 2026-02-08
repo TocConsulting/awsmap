@@ -8,7 +8,7 @@ import click
 from typing import Optional, List
 
 from aws_inventory.auth import create_session, validate_credentials, get_account_alias
-from aws_inventory.collector import collect_all, get_available_services
+from aws_inventory.collector import collect_all, get_available_services, validate_services
 from aws_inventory.formatter import format_output, export_file
 
 
@@ -77,6 +77,18 @@ def main(
         click.echo()
         return
 
+    # Parse and validate services early (no AWS credentials needed)
+    services_list: Optional[List[str]] = None
+    if services:
+        services_list = []
+        for s in services:
+            services_list.extend([x.strip() for x in s.split(',')])
+        try:
+            validate_services(services_list)
+        except ValueError as e:
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(1)
+
     # Create session
     try:
         session = create_session(profile_name=profile)
@@ -102,18 +114,12 @@ def main(
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
-    # Prepare parameters (support both -s ec2 -s s3 and -s ec2,s3)
+    # Parse regions (support both -r us-east-1 -r eu-west-1 and -r us-east-1,eu-west-1)
     regions_list: Optional[List[str]] = None
     if region:
         regions_list = []
         for r in region:
             regions_list.extend([x.strip() for x in r.split(',')])
-
-    services_list: Optional[List[str]] = None
-    if services:
-        services_list = []
-        for s in services:
-            services_list.extend([x.strip() for x in s.split(',')])
 
     # Run collection
     if not quiet:
