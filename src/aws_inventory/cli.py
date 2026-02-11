@@ -29,6 +29,7 @@ def print_progress(service: str, status: str) -> None:
 @click.option('--quiet', '-q', is_flag=True, help='Suppress progress output')
 @click.option('--timings', is_flag=True, help='Show timing summary per service')
 @click.option('--include-global', is_flag=True, help='Include global services even when filtering by non-global regions')
+@click.option('--exclude-defaults', is_flag=True, help='Exclude default AWS resources (default VPCs, security groups, etc.)')
 def main(
     profile: Optional[str],
     region: tuple,
@@ -40,7 +41,8 @@ def main(
     tag: tuple,
     quiet: bool,
     timings: bool,
-    include_global: bool
+    include_global: bool,
+    exclude_defaults: bool
 ) -> None:
     """
     awsmap - Map and inventory AWS resources.
@@ -171,6 +173,12 @@ def main(
             result['resources'] = filtered_resources
             result['metadata']['resource_count'] = len(filtered_resources)
             result['metadata']['tag_filter'] = tag_filters
+
+    # Exclude default AWS resources
+    if exclude_defaults:
+        result['resources'] = [r for r in result['resources'] if not r.get('is_default')]
+        result['metadata']['resource_count'] = len(result['resources'])
+        result['metadata']['exclude_defaults'] = True
 
     # Summary
     if not quiet:

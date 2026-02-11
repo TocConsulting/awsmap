@@ -34,10 +34,10 @@ def format_csv(data: Dict[str, Any]) -> str:
     resources = data.get('resources', [])
 
     if not resources:
-        return "service,type,id,name,region,arn,tags\n"
+        return "service,type,id,name,region,arn,is_default,tags\n"
 
     output = io.StringIO()
-    fieldnames = ['service', 'type', 'id', 'name', 'region', 'arn', 'tags']
+    fieldnames = ['service', 'type', 'id', 'name', 'region', 'arn', 'is_default', 'tags']
     writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
     writer.writeheader()
 
@@ -52,6 +52,7 @@ def format_csv(data: Dict[str, Any]) -> str:
             'name': resource.get('name', ''),
             'region': resource.get('region', ''),
             'arn': resource.get('arn', ''),
+            'is_default': resource.get('is_default', False),
             'tags': tags_str
         })
 
@@ -189,9 +190,11 @@ def format_html(data: Dict[str, Any]) -> str:
                 detail_text = ''.join(c if c >= ' ' else ' ' for c in detail_text)
                 detail_attrs = f' data-has-details="true" data-details="{esc(detail_text)}" onclick="toggleDetails(this)"'
 
+            default_badge = '<span class="default-badge">DEFAULT</span>' if r.get('is_default') else ''
+
             rows.append(f'''
                 <tr data-service="{esc(service_name)}" data-region="{esc(region_val)}" data-name="{esc(str(r.get('name', '')).lower())}" data-id="{esc(str(r.get('id', '')).lower())}" data-tags="{tags_data}"{detail_attrs}>
-                    <td>{esc(r.get('type', ''))}</td>
+                    <td>{esc(r.get('type', ''))}{default_badge}</td>
                     <td>{esc(r.get('name', '') or r.get('id', ''))}</td>
                     <td class="resource-id" title="Click to copy ARN" onclick="event.stopPropagation(); copyToClipboard(this)">{esc(r.get('arn', '') or r.get('id', ''))}</td>
                     <td><span class="region-badge" data-region="{esc(region_val)}">{esc(region_val)}</span></td>
@@ -263,22 +266,24 @@ def format_html(data: Dict[str, Any]) -> str:
     <title>awsmap - {esc(account_id)}</title>
     <style>
         :root {{
-            --primary: #6366f1;
-            --primary-dark: #4f46e5;
-            --secondary: #f97316;
-            --bg: #f8fafc;
+            --primary: #0972d3;
+            --primary-dark: #033160;
+            --accent: #ec7211;
+            --bg: #f2f3f3;
             --card: #ffffff;
-            --text: #1e293b;
-            --text-muted: #64748b;
-            --border: #e2e8f0;
+            --text: #000716;
+            --text-muted: #5f6b7a;
+            --border: #d1d5db;
+            --header-bg: #232f3e;
         }}
 
         .dark {{
-            --bg: #0f172a;
-            --card: #1e293b;
-            --text: #f1f5f9;
-            --text-muted: #94a3b8;
-            --border: #334155;
+            --bg: #0f1b2a;
+            --card: #192534;
+            --text: #d1d5db;
+            --text-muted: #8d99ae;
+            --border: #414d5c;
+            --header-bg: #0f1b2a;
         }}
 
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
@@ -287,205 +292,216 @@ def format_html(data: Dict[str, Any]) -> str:
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: var(--bg);
             color: var(--text);
-            line-height: 1.6;
+            font-size: 14px;
+            line-height: 1.43;
         }}
 
         .container {{ max-width: 1400px; margin: 0 auto; padding: 20px; }}
 
         header {{
-            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            background: var(--header-bg);
             color: white;
-            padding: 40px 20px;
+            padding: 24px 20px;
             text-align: center;
-            margin-bottom: 30px;
-            border-radius: 16px;
+            margin-bottom: 20px;
+            border-radius: 8px;
         }}
 
-        header h1 {{ font-size: 2.5em; margin-bottom: 10px; }}
-        header .subtitle {{ opacity: 0.9; font-size: 1.1em; }}
+        header h1 {{ font-size: 24px; font-weight: 700; margin-bottom: 4px; }}
+        header .subtitle {{ opacity: 0.7; font-size: 14px; }}
 
         .meta-info {{
             display: flex;
             justify-content: center;
-            gap: 30px;
-            margin-top: 20px;
+            gap: 16px;
+            margin-top: 12px;
             flex-wrap: wrap;
         }}
 
         .meta-item {{
-            background: rgba(255,255,255,0.2);
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 0.95em;
+            background: rgba(255,255,255,0.12);
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
         }}
 
         .stats-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
         }}
 
         .stat-card {{
             background: var(--card);
-            border-radius: 12px;
-            padding: 24px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
             text-align: center;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }}
 
         .stat-card .number {{
-            font-size: 2.5em;
+            font-size: 2em;
             font-weight: 700;
-            color: var(--primary);
+            color: var(--text);
         }}
 
         .stat-card .label {{
             color: var(--text-muted);
             text-transform: uppercase;
-            font-size: 0.85em;
+            font-size: 11px;
             letter-spacing: 1px;
-            margin-top: 5px;
+            margin-top: 4px;
         }}
 
         .controls {{
             background: var(--card);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 30px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
         }}
 
         .controls-row {{
             display: flex;
-            gap: 15px;
+            gap: 8px;
             flex-wrap: wrap;
             align-items: center;
         }}
 
         .search-box {{
             flex: 1;
-            min-width: 250px;
-            padding: 12px 16px;
-            border: 2px solid var(--border);
-            border-radius: 8px;
-            font-size: 1em;
-            background: var(--bg);
+            min-width: 220px;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 14px;
+            background: var(--card);
             color: var(--text);
         }}
 
         .search-box:focus {{
             outline: none;
             border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(9,114,211,0.2);
         }}
 
         .filter-select {{
-            padding: 12px 16px;
-            border: 2px solid var(--border);
-            border-radius: 8px;
-            font-size: 1em;
-            background: var(--bg);
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 14px;
+            background: var(--card);
             color: var(--text);
-            min-width: 150px;
+            min-width: 140px;
         }}
 
         .btn {{
-            padding: 12px 20px;
+            padding: 8px 16px;
             border: none;
-            border-radius: 8px;
-            font-size: 1em;
+            border-radius: 4px;
+            font-size: 14px;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.15s;
         }}
 
         .btn-primary {{
-            background: var(--primary);
-            color: white;
+            background: var(--accent);
+            color: #000716;
+            font-weight: 600;
         }}
 
         .btn-primary:hover {{
-            background: var(--primary-dark);
+            background: #eb5f07;
         }}
 
         .btn-secondary {{
-            background: var(--border);
+            background: var(--card);
             color: var(--text);
+            border: 1px solid var(--border);
+        }}
+
+        .btn-secondary:hover {{
+            background: var(--bg);
         }}
 
         .theme-toggle {{
             position: fixed;
-            top: 20px;
-            right: 20px;
+            top: 16px;
+            right: 16px;
             z-index: 100;
             background: var(--card);
-            border: 2px solid var(--border);
-            width: 44px;
-            height: 44px;
+            border: 1px solid var(--border);
+            width: 36px;
+            height: 36px;
             border-radius: 50%;
             cursor: pointer;
-            font-size: 1.2em;
+            font-size: 1em;
         }}
 
         .charts-row {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
+            gap: 12px;
+            margin-bottom: 20px;
         }}
 
         .chart-card {{
             background: var(--card);
-            border-radius: 12px;
-            padding: 24px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
         }}
 
         .chart-card h3 {{
-            margin-bottom: 20px;
+            margin-bottom: 12px;
+            font-size: 14px;
+            font-weight: 600;
             color: var(--text);
         }}
 
         .stat-bar {{
             display: flex;
             align-items: center;
-            gap: 10px;
-            margin-bottom: 12px;
+            gap: 8px;
+            margin-bottom: 8px;
         }}
 
         .stat-bar .stat-label {{
             width: 80px;
-            font-size: 0.85em;
+            font-size: 12px;
             color: var(--text-muted);
         }}
 
         .stat-bar .bar {{
-            height: 24px;
-            background: linear-gradient(90deg, var(--primary), var(--secondary));
-            border-radius: 4px;
+            height: 20px;
+            background: var(--primary);
+            border-radius: 2px;
             min-width: 4px;
         }}
 
         .stat-bar .stat-value {{
             font-weight: 600;
-            min-width: 40px;
+            font-size: 14px;
+            min-width: 36px;
         }}
 
         .service-section {{
             background: var(--card);
-            border-radius: 12px;
-            margin-bottom: 16px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 8px;
             overflow: hidden;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }}
 
         .service-header {{
             display: flex;
             align-items: center;
-            padding: 16px 20px;
+            padding: 12px 16px;
             cursor: pointer;
             background: var(--card);
             border-bottom: 1px solid var(--border);
-            transition: background 0.2s;
+            transition: background 0.15s;
         }}
 
         .service-header:hover {{
@@ -494,15 +510,15 @@ def format_html(data: Dict[str, Any]) -> str:
 
         .service-name {{
             font-weight: 600;
-            font-size: 1.1em;
+            font-size: 14px;
             color: var(--primary);
         }}
 
         .service-count {{
             margin-left: auto;
-            margin-right: 15px;
+            margin-right: 12px;
             color: var(--text-muted);
-            font-size: 0.95em;
+            font-size: 12px;
         }}
 
         .toggle-icon {{
@@ -526,7 +542,7 @@ def format_html(data: Dict[str, Any]) -> str:
         }}
 
         th, td {{
-            padding: 12px 16px;
+            padding: 10px 12px;
             text-align: left;
             border-bottom: 1px solid var(--border);
         }}
@@ -536,7 +552,7 @@ def format_html(data: Dict[str, Any]) -> str:
             font-weight: 600;
             color: var(--text-muted);
             text-transform: uppercase;
-            font-size: 0.8em;
+            font-size: 12px;
             letter-spacing: 0.5px;
         }}
 
@@ -546,7 +562,7 @@ def format_html(data: Dict[str, Any]) -> str:
 
         .resource-id {{
             font-family: 'SF Mono', Monaco, monospace;
-            font-size: 0.85em;
+            font-size: 12px;
             color: var(--text-muted);
             cursor: pointer;
             max-width: 500px;
@@ -583,53 +599,83 @@ def format_html(data: Dict[str, Any]) -> str:
 
         .region-badge {{
             display: inline-block;
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 0.85em;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
             font-weight: 500;
         }}
 
         /* Region color coding */
-        .region-badge[data-region^="us-"] {{ background: #dbeafe; color: #1e40af; }}
-        .region-badge[data-region^="eu-"] {{ background: #dcfce7; color: #166534; }}
-        .region-badge[data-region^="ap-"] {{ background: #fef3c7; color: #92400e; }}
-        .region-badge[data-region^="sa-"] {{ background: #fce7f3; color: #9d174d; }}
-        .region-badge[data-region^="ca-"] {{ background: #f3e8ff; color: #7c3aed; }}
-        .region-badge[data-region^="af-"] {{ background: #ffedd5; color: #c2410c; }}
-        .region-badge[data-region^="me-"] {{ background: #fee2e2; color: #b91c1c; }}
-        .region-badge[data-region="global"] {{ background: #e0e7ff; color: #4338ca; }}
+        .region-badge[data-region^="us-"] {{ background: #f0f4ff; color: #0050b3; }}
+        .region-badge[data-region^="eu-"] {{ background: #f0faf0; color: #1a7f37; }}
+        .region-badge[data-region^="ap-"] {{ background: #fff8f0; color: #9a6700; }}
+        .region-badge[data-region^="sa-"] {{ background: #fdf0f7; color: #953b70; }}
+        .region-badge[data-region^="ca-"] {{ background: #f5f0ff; color: #6941c6; }}
+        .region-badge[data-region^="af-"] {{ background: #fff4f0; color: #b93815; }}
+        .region-badge[data-region^="me-"] {{ background: #fff0f0; color: #b91c1c; }}
+        .region-badge[data-region="global"] {{ background: #f0f0f5; color: #414d5c; }}
 
-        .dark .region-badge[data-region^="us-"] {{ background: #1e3a5f; color: #93c5fd; }}
-        .dark .region-badge[data-region^="eu-"] {{ background: #14532d; color: #86efac; }}
-        .dark .region-badge[data-region^="ap-"] {{ background: #78350f; color: #fcd34d; }}
-        .dark .region-badge[data-region^="sa-"] {{ background: #831843; color: #f9a8d4; }}
-        .dark .region-badge[data-region^="ca-"] {{ background: #4c1d95; color: #c4b5fd; }}
-        .dark .region-badge[data-region^="af-"] {{ background: #7c2d12; color: #fdba74; }}
-        .dark .region-badge[data-region^="me-"] {{ background: #7f1d1d; color: #fca5a5; }}
-        .dark .region-badge[data-region="global"] {{ background: #312e81; color: #a5b4fc; }}
+        .dark .region-badge[data-region^="us-"] {{ background: #0a2744; color: #89bdff; }}
+        .dark .region-badge[data-region^="eu-"] {{ background: #0a2e1a; color: #7ee2a8; }}
+        .dark .region-badge[data-region^="ap-"] {{ background: #2e1e00; color: #f5c451; }}
+        .dark .region-badge[data-region^="sa-"] {{ background: #2e0a1e; color: #e8a0c8; }}
+        .dark .region-badge[data-region^="ca-"] {{ background: #1e0a3e; color: #c4b5fd; }}
+        .dark .region-badge[data-region^="af-"] {{ background: #2e1208; color: #fdba74; }}
+        .dark .region-badge[data-region^="me-"] {{ background: #2e0a0a; color: #fca5a5; }}
+        .dark .region-badge[data-region="global"] {{ background: #1e2a3a; color: #8d99ae; }}
 
         .stat-bar .region-bar {{
-            background: linear-gradient(90deg, #22c55e, #3b82f6);
+            background: #037f0c;
         }}
 
         .tag {{
             display: inline-block;
             padding: 2px 8px;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            color: white;
-            border-radius: 10px;
-            font-size: 0.75em;
+            background: #f0f4ff;
+            color: var(--primary);
+            border: 1px solid #c8d7f0;
+            border-radius: 4px;
+            font-size: 11px;
             margin-right: 4px;
             margin-bottom: 2px;
         }}
 
+        .dark .tag {{
+            background: #0a2744;
+            color: #89bdff;
+            border-color: #1a3a5c;
+        }}
+
         .tag.more {{
-            background: var(--text-muted);
+            background: var(--bg);
+            color: var(--text-muted);
+            border-color: var(--border);
             cursor: pointer;
         }}
 
         .tag.more:hover {{
-            background: var(--primary);
+            border-color: var(--primary);
+            color: var(--primary);
+        }}
+
+        .default-badge {{
+            display: inline-block;
+            padding: 1px 6px;
+            background: #fff3e0;
+            color: #e65100;
+            border: 1px solid #ffcc80;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            margin-left: 6px;
+            vertical-align: middle;
+        }}
+
+        .dark .default-badge {{
+            background: #3e2723;
+            color: #ffab91;
+            border-color: #5d4037;
         }}
 
         .tags-cell {{
@@ -678,13 +724,13 @@ def format_html(data: Dict[str, Any]) -> str:
         }}
 
         .details-panel {{
-            padding: 16px 24px;
+            padding: 12px 16px;
         }}
 
         .details-grid {{
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 8px 24px;
+            gap: 4px 20px;
         }}
 
         .detail-item {{
@@ -697,32 +743,32 @@ def format_html(data: Dict[str, Any]) -> str:
 
         .detail-key {{
             color: var(--text-muted);
-            font-size: 0.85em;
+            font-size: 12px;
             min-width: 120px;
             flex-shrink: 0;
         }}
 
         .detail-value {{
             font-family: 'SF Mono', Monaco, monospace;
-            font-size: 0.85em;
+            font-size: 12px;
             overflow-wrap: break-word;
             min-width: 0;
         }}
 
         .detail-value.bool-true {{
-            color: #16a34a;
+            color: #037f0c;
         }}
 
         .detail-value.bool-false {{
-            color: #dc2626;
+            color: #d91515;
         }}
 
         .dark .detail-value.bool-true {{
-            color: #4ade80;
+            color: #29ad32;
         }}
 
         .dark .detail-value.bool-false {{
-            color: #f87171;
+            color: #ff7979;
         }}
 
         .detail-value.null-value {{
@@ -739,12 +785,13 @@ def format_html(data: Dict[str, Any]) -> str:
         .detail-list-item {{
             display: inline-block;
             padding: 2px 8px;
-            background: var(--border);
-            border-radius: 10px;
-            font-size: 0.85em;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 12px;
         }}
 
-        mark {{ background: #fef08a; color: #1e293b; padding: 1px 2px; border-radius: 2px; }}
+        mark {{ background: #fef08a; color: #000716; padding: 1px 2px; border-radius: 2px; }}
         .dark mark {{ background: #854d0e; color: #fef3c7; }}
 
         tr[data-has-details] {{
@@ -779,7 +826,7 @@ def format_html(data: Dict[str, Any]) -> str:
             right: 20px;
             background: var(--primary);
             color: white;
-            padding: 12px 24px;
+            padding: 10px 20px;
             border-radius: 8px;
             opacity: 0;
             transition: opacity 0.3s;
@@ -790,32 +837,30 @@ def format_html(data: Dict[str, Any]) -> str:
 
         .export-btns {{
             display: flex;
-            gap: 10px;
-            margin-top: 15px;
+            gap: 8px;
+            margin-top: 12px;
         }}
 
         footer {{
             text-align: center;
-            padding: 30px 20px;
+            padding: 24px 20px;
             color: var(--text-muted);
             border-top: 1px solid var(--border);
-            margin-top: 40px;
+            margin-top: 32px;
         }}
 
         .footer-logo {{
-            font-size: 1.5em;
+            font-size: 1.3em;
             font-weight: 700;
-            background: linear-gradient(135deg, #ff9900 0%, #ffb84d 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: #ec7211;
         }}
 
         @media (max-width: 768px) {{
-            header h1 {{ font-size: 1.8em; }}
-            .meta-info {{ flex-direction: column; gap: 10px; }}
+            header h1 {{ font-size: 20px; }}
+            .meta-info {{ flex-direction: column; gap: 8px; }}
             .controls-row {{ flex-direction: column; }}
             .search-box, .filter-select {{ width: 100%; }}
+            .stats-grid {{ grid-template-columns: repeat(2, 1fr); }}
         }}
 
         @media print {{
@@ -835,7 +880,7 @@ def format_html(data: Dict[str, Any]) -> str:
     <div class="container">
         <header>
             <h1>AWS Inventory Report</h1>
-            <div class="subtitle">Comprehensive Cloud Asset Discovery</div>
+            <div class="subtitle">Comprehensive AWS Asset Discovery</div>
             <div class="meta-info">
                 <span class="meta-item">Account: {esc(account_id)}</span>
                 <span class="meta-item">Generated: {esc(timestamp)}</span>
@@ -845,19 +890,19 @@ def format_html(data: Dict[str, Any]) -> str:
 
         <div class="stats-grid">
             <div class="stat-card">
-                <div class="number">{total_resources:,}</div>
+                <div class="number" id="stat-total">{total_resources:,}</div>
                 <div class="label">Total Resources</div>
             </div>
             <div class="stat-card">
-                <div class="number">{len(services)}</div>
+                <div class="number" id="stat-services">{len(services)}</div>
                 <div class="label">Services</div>
             </div>
             <div class="stat-card">
-                <div class="number">{len(regions)}</div>
+                <div class="number" id="stat-regions">{len(regions)}</div>
                 <div class="label">Regions</div>
             </div>
             <div class="stat-card">
-                <div class="number">{len(resource_types)}</div>
+                <div class="number" id="stat-types">{len(resource_types)}</div>
                 <div class="label">Resource Types</div>
             </div>
         </div>
@@ -865,11 +910,11 @@ def format_html(data: Dict[str, Any]) -> str:
         <div class="charts-row">
             <div class="chart-card">
                 <h3>Top Services</h3>
-                {service_stats}
+                <div id="chart-services">{service_stats}</div>
             </div>
             <div class="chart-card">
                 <h3>Top Regions</h3>
-                {region_stats}
+                <div id="chart-regions">{region_stats}</div>
             </div>
         </div>
 
@@ -993,6 +1038,39 @@ def format_html(data: Dict[str, Any]) -> str:
             }}
         }}
 
+        function updateDashboard() {{
+            const visibleRows = document.querySelectorAll('tbody tr:not(.hidden):not(.details-row)');
+            const serviceCounts = {{}};
+            const regionCounts = {{}};
+            const typeCounts = {{}};
+
+            visibleRows.forEach(row => {{
+                const svc = row.dataset.service;
+                const reg = row.dataset.region;
+                const type = row.querySelector('td:first-child');
+                const key = svc + '/' + (type ? type.textContent : '');
+                serviceCounts[svc] = (serviceCounts[svc] || 0) + 1;
+                regionCounts[reg] = (regionCounts[reg] || 0) + 1;
+                typeCounts[key] = (typeCounts[key] || 0) + 1;
+            }});
+
+            const total = visibleRows.length;
+            document.getElementById('stat-total').textContent = total.toLocaleString();
+            document.getElementById('stat-services').textContent = Object.keys(serviceCounts).length;
+            document.getElementById('stat-regions').textContent = Object.keys(regionCounts).length;
+            document.getElementById('stat-types').textContent = Object.keys(typeCounts).length;
+
+            const topServices = Object.entries(serviceCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+            document.getElementById('chart-services').innerHTML = topServices.map(([svc, count]) =>
+                '<div class="stat-bar"><span class="stat-label">' + svc.toUpperCase() + '</span><div class="bar" style="width: ' + Math.min(100, Math.round(count * 100 / Math.max(1, total))) + '%"></div><span class="stat-value">' + count + '</span></div>'
+            ).join('');
+
+            const topRegions = Object.entries(regionCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+            document.getElementById('chart-regions').innerHTML = topRegions.map(([reg, count]) =>
+                '<div class="stat-bar"><span class="stat-label">' + reg + '</span><div class="bar region-bar" style="width: ' + Math.min(100, Math.round(count * 100 / Math.max(1, total))) + '%"></div><span class="stat-value">' + count + '</span></div>'
+            ).join('');
+        }}
+
         function filterResources() {{
             const search = document.getElementById('searchBox').value.toLowerCase();
             const service = document.getElementById('serviceFilter').value;
@@ -1006,7 +1084,7 @@ def format_html(data: Dict[str, Any]) -> str:
                     return;
                 }}
 
-                let hasVisible = false;
+                let visibleCount = 0;
                 section.querySelectorAll('tbody tr:not(.details-row)').forEach(row => {{
                     const rowService = row.dataset.service;
                     const rowRegion = row.dataset.region;
@@ -1025,7 +1103,7 @@ def format_html(data: Dict[str, Any]) -> str:
 
                     if (matchService && matchRegion && matchSearch && matchTag) {{
                         row.classList.remove('hidden');
-                        hasVisible = true;
+                        visibleCount++;
                         if (search) {{
                             highlightMatches(row, search, 'td:nth-child(-n+3)');
                         }} else {{
@@ -1060,7 +1138,14 @@ def format_html(data: Dict[str, Any]) -> str:
                     }}
                 }});
 
+                const hasVisible = visibleCount > 0;
                 section.classList.toggle('hidden', !hasVisible);
+
+                const countEl = section.querySelector('.service-count');
+                if (countEl) {{
+                    countEl.textContent = visibleCount + ' resource' + (visibleCount !== 1 ? 's' : '');
+                }}
+
                 const content = section.querySelector('.service-content');
                 const icon = section.querySelector('.toggle-icon');
                 if (hasVisible && search) {{
@@ -1073,6 +1158,8 @@ def format_html(data: Dict[str, Any]) -> str:
                     delete section.dataset.autoExpanded;
                 }}
             }});
+
+            updateDashboard();
         }}
 
         function clearFilters() {{

@@ -146,6 +146,7 @@ def collect_ec2_resources(session: boto3.Session, region: Optional[str], account
                     'arn': f"arn:aws:ec2:{region}:{account_id}:security-group/{sg['GroupId']}",
                     'name': sg.get('GroupName') or sg['GroupId'],
                     'region': region,
+                    'is_default': sg.get('GroupName') == 'default',
                     'details': {
                         'vpc_id': sg.get('VpcId'),
                         'description': sg.get('Description'),

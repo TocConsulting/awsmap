@@ -37,6 +37,7 @@ def collect_vpc_resources(session: boto3.Session, region: Optional[str], account
                     'arn': f"arn:aws:ec2:{region}:{account_id}:vpc/{vpc['VpcId']}",
                     'name': get_tag_value(tags, 'Name') or vpc['VpcId'],
                     'region': region,
+                    'is_default': vpc.get('IsDefault', False),
                     'details': {
                         'cidr_block': vpc.get('CidrBlock'),
                         'state': vpc.get('State'),
@@ -48,6 +49,10 @@ def collect_vpc_resources(session: boto3.Session, region: Optional[str], account
                 })
     except Exception:
         pass
+
+    # Build set of default VPC IDs and their DHCP options for marking child resources
+    default_vpc_ids = {r['id'] for r in resources if r.get('is_default')}
+    default_dhcp_ids = {r['details']['dhcp_options_id'] for r in resources if r.get('is_default') and r['details'].get('dhcp_options_id')}
 
     # Subnets
     try:
@@ -62,6 +67,7 @@ def collect_vpc_resources(session: boto3.Session, region: Optional[str], account
                     'arn': subnet.get('SubnetArn', f"arn:aws:ec2:{region}:{account_id}:subnet/{subnet['SubnetId']}"),
                     'name': get_tag_value(tags, 'Name') or subnet['SubnetId'],
                     'region': region,
+                    'is_default': subnet.get('DefaultForAz', False),
                     'details': {
                         'vpc_id': subnet.get('VpcId'),
                         'cidr_block': subnet.get('CidrBlock'),
@@ -82,6 +88,7 @@ def collect_vpc_resources(session: boto3.Session, region: Optional[str], account
         for page in paginator.paginate():
             for rt in page.get('RouteTables', []):
                 tags = rt.get('Tags', [])
+                is_main = any(a.get('Main') for a in rt.get('Associations', []))
                 resources.append({
                     'service': 'vpc',
                     'type': 'route-table',
@@ -89,11 +96,12 @@ def collect_vpc_resources(session: boto3.Session, region: Optional[str], account
                     'arn': f"arn:aws:ec2:{region}:{account_id}:route-table/{rt['RouteTableId']}",
                     'name': get_tag_value(tags, 'Name') or rt['RouteTableId'],
                     'region': region,
+                    'is_default': rt.get('VpcId') in default_vpc_ids and is_main,
                     'details': {
                         'vpc_id': rt.get('VpcId'),
                         'routes_count': len(rt.get('Routes', [])),
                         'associations_count': len(rt.get('Associations', [])),
-                        'main': any(a.get('Main') for a in rt.get('Associations', [])),
+                        'main': is_main,
                     },
                     'tags': tags_to_dict(tags)
                 })
@@ -114,6 +122,7 @@ def collect_vpc_resources(session: boto3.Session, region: Optional[str], account
                     'arn': f"arn:aws:ec2:{region}:{account_id}:internet-gateway/{igw['InternetGatewayId']}",
                     'name': get_tag_value(tags, 'Name') or igw['InternetGatewayId'],
                     'region': region,
+                    'is_default': (attachments[0].get('VpcId') in default_vpc_ids) if attachments else False,
                     'details': {
                         'vpc_id': attachments[0].get('VpcId') if attachments else None,
                         'state': attachments[0].get('State') if attachments else 'detached',
@@ -280,6 +289,7 @@ def collect_vpc_resources(session: boto3.Session, region: Optional[str], account
                 'arn': f"arn:aws:ec2:{region}:{account_id}:dhcp-options/{dhcp['DhcpOptionsId']}",
                 'name': get_tag_value(tags, 'Name') or dhcp['DhcpOptionsId'],
                 'region': region,
+                'is_default': dhcp['DhcpOptionsId'] in default_dhcp_ids,
                 'details': {
                     'configurations': {cfg['Key']: cfg.get('Values', []) for cfg in dhcp.get('DhcpConfigurations', [])},
                 },
@@ -301,6 +311,7 @@ def collect_vpc_resources(session: boto3.Session, region: Optional[str], account
                     'arn': f"arn:aws:ec2:{region}:{account_id}:network-acl/{nacl['NetworkAclId']}",
                     'name': get_tag_value(tags, 'Name') or nacl['NetworkAclId'],
                     'region': region,
+                    'is_default': nacl.get('IsDefault', False),
                     'details': {
                         'vpc_id': nacl.get('VpcId'),
                         'is_default': nacl.get('IsDefault'),

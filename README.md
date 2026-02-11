@@ -102,6 +102,9 @@ awsmap --list-services
 
 # Show timing per service (useful for debugging)
 awsmap -p myprofile --timings
+
+# Exclude default AWS resources (default VPCs, security groups, etc.)
+awsmap -p myprofile --exclude-defaults
 ```
 
 ## CLI Options
@@ -118,6 +121,7 @@ awsmap -p myprofile --timings
 | `-q, --quiet` | Suppress progress output |
 | `--timings` | Show timing summary per service |
 | `--include-global` | Include global services when filtering by non-global regions |
+| `--exclude-defaults` | Exclude default AWS resources (default VPCs, security groups, etc.) |
 | `--list-services` | List available service collectors |
 
 ## Supported Services
@@ -180,7 +184,7 @@ Interactive report with:
 ```
 
 ### CSV
-Flat format with columns: service, type, id, name, region, arn, tags
+Flat format with columns: service, type, id, name, region, arn, is_default, tags
 
 ## Tag Filtering
 
@@ -307,6 +311,8 @@ This tool only collects **user-owned resources**, excluding:
 - AWS default queues/groups (MediaConvert, X-Ray)
 - AWS managed domain lists (Route53 Resolver: `AWSManagedDomains*`)
 - Default data lake settings (Lake Formation)
+
+**Default VPC resources** (default VPCs, subnets, security groups, route tables, internet gateways, NACLs, DHCP options) are collected by default and marked with a "DEFAULT" badge in HTML reports. Use `--exclude-defaults` to filter them out.
 
 See [SERVICES.md](SERVICES.md#filtered-resources) for the complete list of filtered resources.
 
