@@ -120,3 +120,6 @@ secrets.yaml
 
 # Claude Code project memory (internal use only)
 CLAUDE.md
+
+# Virtual environment
+.venv/
