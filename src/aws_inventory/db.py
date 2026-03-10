@@ -51,8 +51,19 @@ def get_connection(db_path=None):
     """Open (or create) the SQLite database and ensure schema exists."""
     if db_path is None:
         db_path = DEFAULT_DB_PATH
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    db_dir = os.path.dirname(db_path)
+    os.makedirs(db_dir, exist_ok=True)
+    # Restrict directory so only the owner can read/write/execute
+    try:
+        os.chmod(db_dir, 0o700)
+    except OSError:
+        pass
     conn = sqlite3.connect(db_path, timeout=30)
+    # Restrict DB file so only the owner can read/write
+    try:
+        os.chmod(db_path, 0o600)
+    except OSError:
+        pass
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA_SQL)
     _migrate(conn)

@@ -2967,7 +2967,9 @@ def _fix_partial_value_match(sql, conn, *, enable_fuzzy_fallback=True):
         # Skip tag exact matches (Environment=production should not become LIKE)
         if "tags" in field_expr:
             continue
-        like_clause = f"{field_expr} LIKE '%{value}%'"
+        # Sanitize value: escape SQLite LIKE special chars and single quotes
+        safe_value = value.replace("'", "''").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like_clause = f"{field_expr} LIKE '%{safe_value}%' ESCAPE '\\'"
         new_sql = new_sql[:m.start()] + like_clause + new_sql[m.end():]
 
     if new_sql != sql:

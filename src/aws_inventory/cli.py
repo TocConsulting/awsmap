@@ -49,6 +49,7 @@ def print_progress(service: str, status: str) -> None:
 @click.option('--include-global', is_flag=True, help='Include global services even when filtering by non-global regions')
 @click.option('--exclude-defaults', is_flag=True, help='Exclude default AWS resources (default VPCs, security groups, etc.)')
 @click.option('--no-db', is_flag=True, help='Skip local database storage')
+@click.option('--redact', is_flag=True, help='Redact AWS account IDs in output files (replace with [REDACTED])')
 @click.pass_context
 def main(
     ctx,
@@ -64,7 +65,8 @@ def main(
     timings: bool,
     include_global: bool,
     exclude_defaults: bool,
-    no_db: bool
+    no_db: bool,
+    redact: bool
 ) -> None:
     """
     awsmap - Map and inventory AWS resources.
@@ -248,7 +250,7 @@ def main(
 
     # Format output
     try:
-        output_content = format_output(result, output_format)
+        output_content = format_output(result, output_format, redact=redact)
     except Exception as e:
         click.echo(f"Error formatting output: {e}", err=True)
         sys.exit(1)
@@ -257,7 +259,8 @@ def main(
     if not output_file:
         timestamp = time.strftime('%Y%m%d_%H%M%S')
         ext = output_format
-        output_file = f"{account_id}_inventory_{timestamp}.{ext}"
+        file_account_id = "REDACTED" if redact else account_id
+        output_file = f"{file_account_id}_inventory_{timestamp}.{ext}"
 
     # Write output
     try:

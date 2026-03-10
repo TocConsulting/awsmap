@@ -6,6 +6,11 @@ import re
 from aws_inventory.nlq import _scan_where
 
 
+def _escape_sql_string(value: str) -> str:
+    """Escape a string value for safe inline SQL interpolation (single-quote escaping)."""
+    return value.replace("'", "''")
+
+
 # Directories searched for .sql files (built-in first, then user)
 _BUILTIN_DIR = os.path.join(os.path.dirname(__file__), "queries")
 _USER_DIR = os.path.join(os.path.expanduser("~"), ".awsmap", "queries")
@@ -102,7 +107,16 @@ def prepare_query(raw_sql, meta, account_id=None, params=None):
 
     # Inject optional filters for common params (account already handled via scan_filter)
     if "service" in params:
-        svc = params.pop("service").replace("'", "''")
+        svc_raw = params.pop("service")
+        # Validate service against known collectors to prevent injection
+        try:
+            from aws_inventory.collector import get_available_services
+            _known_services = set(get_available_services())
+        except Exception:
+            _known_services = None
+        if _known_services is not None and svc_raw not in _known_services:
+            raise ValueError(f"Unknown service: {svc_raw!r}")
+        svc = _escape_sql_string(svc_raw)
         # Inject service filter before GROUP BY/ORDER BY/LIMIT or at end
         inject_m = re.search(r'\s+(?:GROUP|ORDER|LIMIT)\b', raw_sql, re.IGNORECASE)
         clause = f" AND service = '{svc}'"
@@ -112,7 +126,11 @@ def prepare_query(raw_sql, meta, account_id=None, params=None):
             raw_sql += clause
 
     if "region" in params:
-        rgn = params.pop("region").replace("'", "''")
+        rgn_raw = params.pop("region")
+        # Validate region: alphanumeric + hyphens only
+        if not re.fullmatch(r'[a-z0-9-]{1,30}', rgn_raw):
+            raise ValueError(f"Invalid region: {rgn_raw!r}")
+        rgn = _escape_sql_string(rgn_raw)
         inject_m = re.search(r'\s+(?:GROUP|ORDER|LIMIT)\b', raw_sql, re.IGNORECASE)
         clause = f" AND region = '{rgn}'"
         if inject_m:
@@ -120,8 +138,8 @@ def prepare_query(raw_sql, meta, account_id=None, params=None):
         else:
             raw_sql += clause
 
-    # Replace remaining {param} placeholders
+    # Replace remaining {param} placeholders (escape single quotes)
     for key, value in params.items():
-        raw_sql = raw_sql.replace("{" + key + "}", value.replace("'", "''"))
+        raw_sql = raw_sql.replace("{" + key + "}", _escape_sql_string(value))
 
     return raw_sql

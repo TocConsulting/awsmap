@@ -117,3 +117,6 @@ credentials.json
 secrets.yaml
 .env.local
 .env.*.local
+
+# Claude Code project memory (internal use only)
+CLAUDE.md

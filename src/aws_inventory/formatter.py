@@ -1230,13 +1230,29 @@ def format_html(data: Dict[str, Any]) -> str:
     return html
 
 
-def format_output(data: Dict[str, Any], format_type: str) -> str:
+def redact_account_ids(content: str, account_id: str) -> str:
+    """Replace occurrences of account_id with [REDACTED] in output content.
+
+    Args:
+        content: Formatted output string (HTML, JSON, CSV, etc.)
+        account_id: AWS account ID to redact (12-digit string)
+
+    Returns:
+        Content with account_id replaced by [REDACTED]
+    """
+    if not account_id or not account_id.strip():
+        return content
+    return content.replace(account_id, "[REDACTED]")
+
+
+def format_output(data: Dict[str, Any], format_type: str, redact: bool = False) -> str:
     """
     Format inventory data in the specified format.
 
     Args:
         data: Inventory data with metadata and resources
         format_type: Output format (json, csv, html)
+        redact: If True, replace AWS account IDs with [REDACTED] in output
 
     Returns:
         Formatted string
@@ -1247,13 +1263,19 @@ def format_output(data: Dict[str, Any], format_type: str) -> str:
     format_type = format_type.lower()
 
     if format_type == 'json':
-        return format_json(data)
+        content = format_json(data)
     elif format_type == 'csv':
-        return format_csv(data)
+        content = format_csv(data)
     elif format_type == 'html':
-        return format_html(data)
+        content = format_html(data)
     else:
         raise ValueError(f"Unsupported format: {format_type}")
+
+    if redact:
+        account_id = data.get('metadata', {}).get('account_id', '')
+        content = redact_account_ids(content, account_id)
+
+    return content
 
 
 def export_file(content: str, file_path: str) -> None:
@@ -1264,5 +1286,11 @@ def export_file(content: str, file_path: str) -> None:
         content: Content to write
         file_path: Destination file path
     """
+    import os
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write(content)
+    # Restrict output file so only the owner can read/write (no group/world access)
+    try:
+        os.chmod(file_path, 0o600)
+    except OSError:
+        pass

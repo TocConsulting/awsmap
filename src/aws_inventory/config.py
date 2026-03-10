@@ -3,6 +3,7 @@ User configuration for awsmap (~/.awsmap/config).
 """
 
 import os
+import pathlib
 
 
 CONFIG_PATH = os.path.expanduser("~/.awsmap/config")
@@ -43,6 +44,17 @@ def validate_config(key, value):
         return f"Unknown key '{key}'. Valid keys: {valid}"
     allowed = _VALID_KEYS[key]
     if allowed is None:
+        # Special validation for 'db': reject path traversal attempts
+        if key == "db":
+            expanded = os.path.expanduser(value)
+            try:
+                resolved = str(pathlib.Path(expanded).resolve())
+                home = str(pathlib.Path.home())
+                # Must stay within the user's home directory
+                if not resolved.startswith(home + os.sep) and resolved != home:
+                    return f"'db' path must be within your home directory, got '{value}'"
+            except (ValueError, OSError):
+                return f"'db' path is invalid: '{value}'"
         return None
     if allowed == "integer":
         if not value.isdigit() or int(value) < 1:

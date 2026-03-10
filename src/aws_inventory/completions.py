@@ -49,6 +49,9 @@ def complete_regions(ctx, param, incomplete):
     ]
 
 
+_AWS_CONFIG_MAX_BYTES = 1 * 1024 * 1024  # 1 MB limit for AWS config files
+
+
 def complete_profiles(ctx, param, incomplete):
     """Complete AWS profile names from ~/.aws/credentials and ~/.aws/config."""
     try:
@@ -56,6 +59,12 @@ def complete_profiles(ctx, param, incomplete):
         for path in ["~/.aws/credentials", "~/.aws/config"]:
             full = os.path.expanduser(path)
             if os.path.exists(full):
+                # Guard against abnormally large or malformed config files
+                try:
+                    if os.path.getsize(full) > _AWS_CONFIG_MAX_BYTES:
+                        continue
+                except OSError:
+                    continue
                 cp = configparser.ConfigParser()
                 cp.read(full)
                 for section in cp.sections():
