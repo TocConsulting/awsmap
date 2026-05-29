@@ -8,7 +8,7 @@
   <a href="https://hub.docker.com/r/tarekcheikh/awsmap"><img src="https://img.shields.io/docker/v/tarekcheikh/awsmap?label=docker" alt="Docker"></a>
   <a href="https://hub.docker.com/r/tarekcheikh/awsmap"><img src="https://img.shields.io/docker/pulls/tarekcheikh/awsmap" alt="Docker Pulls"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-brightgreen.svg" alt="License: MIT"></a>
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python 3.8+"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="Python 3.9+"></a>
   <a href="https://aws.amazon.com/"><img src="https://img.shields.io/badge/AWS-150%2B_Services-orange.svg" alt="AWS Services"></a>
 </p>
 
@@ -30,6 +30,7 @@ A fast, comprehensive tool for mapping and inventorying AWS resources across 150
 - **Beautiful HTML Reports**: Interactive reports with search, filters, dark mode, and export
 - **Multiple Outputs**: JSON, CSV, and HTML formats
 - **Fast**: Parallel execution with 40 workers (~2 minutes for typical accounts)
+- **Drift Detection**: Compare snapshots over time — detect added, removed, and modified resources (`awsmap diff`)
 - **Console Login Support**: Works with `aws login` credential provider
 
 ## Installation
@@ -40,7 +41,7 @@ A fast, comprehensive tool for mapping and inventorying AWS resources across 150
 pip install awsmap
 ```
 
-**Requirements:** Python 3.8+, AWS credentials configured
+**Requirements:** Python 3.9+, AWS credentials configured
 
 ### Docker
 
@@ -288,6 +289,89 @@ awsmap ask show me all IAM users
 awsmap ask -a production show me Lambda functions
 ```
 
+## Drift Detection
+
+Compare snapshots of your AWS inventory over time to detect what changed — resources added, removed, or modified.
+
+```bash
+# What changed in the last 7 days?
+awsmap diff --from 7d
+
+# Compare two specific dates
+awsmap diff --from 2026-01-15 --to 2026-02-09
+
+# Scope to specific services
+awsmap diff --from 30d -s ec2,s3
+
+# Scope to a specific account (by profile name, alias, or account ID)
+awsmap diff --from 7d -a production -r us-east-1
+
+# Show only added or removed resources
+awsmap diff --from 7d --type added
+awsmap diff --from 7d --type removed
+
+# Summary only (no resource details)
+awsmap diff --from 7d --summary
+
+# Ignore tag-only changes
+awsmap diff --from 30d --ignore-tags
+
+# JSON output
+awsmap diff --from 7d -f json -o drift-report.json
+
+# HTML report (interactive, with filters and dark mode)
+awsmap diff --from 7d -f html -o drift-report.html
+```
+
+**How it works:** awsmap reconstructs point-in-time snapshots from your scan history. For each `(account, service)`, it finds the latest scan at or before the given date, then compares the two snapshots field by field. This correctly handles partial scans — if you scanned EC2 on Monday and S3 on Tuesday, each service uses its own latest scan.
+
+**Relative dates:** `7d`, `30d`, `90d`, `yesterday`, `today`, or exact dates like `2026-01-15`.
+
+**Change types:**
+- **Added** — resource exists in the newer snapshot but not the older one
+- **Removed** — resource exists in the older snapshot but not the newer one
+- **Modified** — resource exists in both but details, tags, or name changed (with field-level diffs)
+
+## Demo Database
+
+Generate a realistic synthetic database to try awsmap without needing an AWS account. Covers all 150+ services, multiple accounts, and multiple scans with drift.
+
+```bash
+# Generate with defaults (3 accounts, 3 scans, ~12,000 resources)
+awsmap demo
+
+# Custom options
+awsmap demo --accounts 2 --scans 5 --db ./demo.db
+
+# Overwrite existing
+awsmap demo --force
+```
+
+After generating, use `--db` to point any command at the demo database:
+
+```bash
+awsmap query --db ~/.awsmap/demo.db -n admin-users
+awsmap ask --db ~/.awsmap/demo.db show me all EC2 instances
+awsmap diff --db ~/.awsmap/demo.db --from 30d
+awsmap examples lambda 5 --db ~/.awsmap/demo.db
+```
+
+Or set it as the default database:
+
+```bash
+awsmap config set db ~/.awsmap/demo.db
+```
+
+### Demo Options (`awsmap demo`)
+
+| Option | Description |
+|--------|-------------|
+| `--db` | Database path (default: `~/.awsmap/demo.db`) |
+| `--accounts` | Number of accounts to generate (1-5, default: 3) |
+| `--scans` | Number of scans per account for drift (1-5, default: 3) |
+| `--seed` | Random seed for reproducibility (default: 42) |
+| `--force` | Overwrite existing demo database |
+
 ## CLI Options
 
 ### Scan Options
@@ -326,6 +410,22 @@ awsmap ask -a production show me Lambda functions
 | Option | Description |
 |--------|-------------|
 | `-a, --account` | Scope to an account (account ID, account alias, or AWS profile) |
+| `--db` | Database path (default: `~/.awsmap/inventory.db`) |
+
+### Diff Options (`awsmap diff`)
+
+| Option | Description |
+|--------|-------------|
+| `--from` | Start date for comparison (**required**). Supports: `YYYY-MM-DD`, `7d`, `30d`, `yesterday`, `today` |
+| `--to` | End date (default: current state). Same date formats as `--from` |
+| `-a, --account` | Scope to an account (account ID, alias, or profile) |
+| `-s, --service` | Service(s) to compare (comma-separated or multiple flags) |
+| `-r, --region` | Region(s) to compare (comma-separated or multiple flags) |
+| `--type` | Show only one change type: `all` (default), `added`, `removed`, or `modified` |
+| `--summary` | Show summary counts only, no resource details |
+| `--ignore-tags` | Ignore tag-only changes |
+| `-f, --format` | Output format: `table` (default), `json`, `html` |
+| `-o, --output` | Output file path |
 | `--db` | Database path (default: `~/.awsmap/inventory.db`) |
 
 ### Examples Options (`awsmap examples`)
@@ -395,7 +495,7 @@ awsmap completion fish > ~/.config/fish/completions/awsmap.fish
 
 | Context | Completions |
 |---------|-------------|
-| `awsmap <TAB>` | Subcommands: ask, config, completion, examples, query |
+| `awsmap <TAB>` | Subcommands: ask, config, completion, demo, diff, examples, query |
 | `awsmap -s <TAB>` | Service names (ec2, s3, lambda, ...) |
 | `awsmap -r <TAB>` | AWS region names |
 | `awsmap -p <TAB>` | AWS profile names from ~/.aws/credentials and ~/.aws/config |
@@ -471,6 +571,7 @@ Interactive report with:
       "arn": "arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0",
       "name": "my-instance",
       "region": "us-east-1",
+      "is_default": false,
       "details": {...},
       "tags": {"Owner": "John", "Environment": "Production"}
     }

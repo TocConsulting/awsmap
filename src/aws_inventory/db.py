@@ -11,6 +11,16 @@ import uuid
 
 DEFAULT_DB_PATH = os.path.expanduser("~/.awsmap/inventory.db")
 
+# A few collectors are invoked under one service label but emit resources with a
+# different `service` value. Normalize the scan label to the emitted name so the
+# stored scanned-service list lines up with resources.service (used by snapshot
+# reconstruction and is_current bookkeeping). Mirrors the special cases in
+# collector.SERVICE_MODULE_MAP whose module name differs from the scan label.
+_SERVICE_LABEL_TO_EMITTED = {
+    "eventbridge-scheduler": "scheduler",
+    "eventbridge-pipes": "pipes",
+}
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS scans (
     scan_id TEXT PRIMARY KEY,
@@ -21,7 +31,8 @@ CREATE TABLE IF NOT EXISTS scans (
     duration_seconds REAL,
     resource_count INTEGER,
     services_scanned INTEGER,
-    regions_scanned INTEGER
+    regions_scanned INTEGER,
+    scanned_services TEXT
 );
 
 CREATE TABLE IF NOT EXISTS resources (
@@ -88,10 +99,24 @@ def _migrate(conn):
             "  AND s2.timestamp > s1.timestamp)"
         )
         conn.commit()
-    # Always ensure the index exists (safe for both new and migrated DBs)
+    # Add scanned_services column to existing scan tables (stores the JSON list of
+    # services each scan covered, so reconstruct_snapshot can represent a service
+    # that was scanned but returned zero resources). NULL for legacy scans.
+    scan_cols = {row[1] for row in conn.execute("PRAGMA table_info(scans)").fetchall()}
+    if "scanned_services" not in scan_cols:
+        try:
+            conn.execute("ALTER TABLE scans ADD COLUMN scanned_services TEXT")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+    # Always ensure indexes exist (safe for both new and migrated DBs)
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_resources_current "
         "ON resources(is_current, account_id, service)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_scans_timestamp "
+        "ON scans(timestamp)"
     )
 
 
@@ -146,20 +171,34 @@ def store_scan(conn, result, profile=None, account_alias=None, scanned_services=
     scan_id = uuid.uuid4().hex[:16]
     meta = result["metadata"]
     account_id = meta.get("account_id", "")
+    resources = result.get("resources", [])
 
-    # Mark old resources as not current for the scanned services
-    if scanned_services:
-        placeholders = ",".join("?" * len(scanned_services))
+    # Compute the canonical set of services this scan covered: the service labels
+    # we scanned (normalized to their emitted names) plus the names actually emitted
+    # by the collectors. Normalization is essential because a few collectors emit a
+    # `service` value that differs from the scan label they run under (e.g. the
+    # `eventbridge-scheduler`/`eventbridge-pipes` labels store rows as
+    # `scheduler`/`pipes`). This canonical set is used both to retire superseded
+    # rows and to persist what the scan covered.
+    services_covered = {_SERVICE_LABEL_TO_EMITTED.get(s, s) for s in (scanned_services or [])}
+    services_covered.update(r.get("service", "") for r in resources)
+    services_covered.discard("")
+    services_covered = sorted(services_covered)
+
+    # Mark old resources as not current for every service this scan covered.
+    # Without this, re-scanning would leave stale is_current rows behind.
+    if services_covered:
+        placeholders = ",".join("?" * len(services_covered))
         conn.execute(
             f"UPDATE resources SET is_current=0 "
             f"WHERE account_id=? AND service IN ({placeholders}) AND is_current=1",
-            [account_id] + list(scanned_services)
+            [account_id] + services_covered
         )
 
     conn.execute(
         "INSERT INTO scans (scan_id, account_id, account_alias, profile, timestamp, "
-        "duration_seconds, resource_count, services_scanned, regions_scanned) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "duration_seconds, resource_count, services_scanned, regions_scanned, scanned_services) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             scan_id,
             meta.get("account_id", ""),
@@ -170,14 +209,15 @@ def store_scan(conn, result, profile=None, account_alias=None, scanned_services=
             meta.get("resource_count", 0),
             meta.get("services_scanned", 0),
             meta.get("regions_scanned", 0),
+            json.dumps(services_covered),
         ),
     )
 
-    resources = result.get("resources", [])
     for r in resources:
         conn.execute(
             "INSERT INTO resources (scan_id, service, type, id, arn, name, region, "
-            "account_id, is_default, details, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "account_id, is_default, is_current, details, tags) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
             (
                 scan_id,
                 r.get("service", ""),

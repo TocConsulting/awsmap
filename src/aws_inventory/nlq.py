@@ -431,37 +431,15 @@ _LATEST_SCAN = "is_current=1"
 def _scan_where(account_id=None):
     """Build the current-resources filter, optionally scoped to one account."""
     if account_id:
-        return f"is_current=1 AND account_id='{account_id}'"
+        # Sanitize account_id: must be alphanumeric/dash/underscore only
+        safe_id = ''.join(c for c in account_id if c.isalnum() or c in '-_')
+        return f"is_current=1 AND account_id='{safe_id}'"
     return _LATEST_SCAN
 
 
 # ---------------------------------------------------------------------------
 # 8. Schema context builder
 # ---------------------------------------------------------------------------
-
-def build_schema_context(conn, account_id=None):
-    """Query the DB for detail field names per service/type, for schema hints."""
-    where = f"WHERE {_scan_where(account_id)}" if account_id else f"WHERE {_LATEST_SCAN}"
-    cursor = conn.execute(
-        f"SELECT DISTINCT service, type FROM resources {where} ORDER BY service, type"
-    )
-    pairs = cursor.fetchall()
-    hints = []
-    for svc, rtype in pairs:
-        row = conn.execute(
-            f"SELECT details FROM resources WHERE service=? AND type=? AND {_scan_where(account_id)} LIMIT 1",
-            (svc, rtype)
-        ).fetchone()
-        if row and row[0]:
-            try:
-                detail = json.loads(row[0])
-                if isinstance(detail, dict) and detail:
-                    fields = ", ".join(sorted(detail.keys()))
-                    hints.append(f"{svc}/{rtype}: {fields}")
-            except (json.JSONDecodeError, TypeError):
-                pass
-    return "\n".join(hints) if hints else ""
-
 
 # ---------------------------------------------------------------------------
 # 9. _validate_intent — minimal validation and normalization

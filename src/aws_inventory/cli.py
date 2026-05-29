@@ -5,6 +5,7 @@ Command-line interface for AWS Inventory Tool.
 import csv
 import io
 import json
+import os
 import sys
 import time
 import click
@@ -24,6 +25,11 @@ from aws_inventory.examples import (list_services as examples_list_services,
 from aws_inventory.completions import (complete_services, complete_regions, complete_profiles,
                                        complete_query_names, complete_accounts, complete_config_keys,
                                        complete_example_services, complete_example_numbers)
+from aws_inventory.diff import (normalize_timestamp, reconstruct_snapshot,
+                                reconstruct_current_snapshot, compute_diff,
+                                build_summary, snapshot_metadata)
+from aws_inventory.demo import generate_demo_db
+from aws_inventory.diff_formatter import format_diff_table, format_diff_json, format_diff_html
 from aws_inventory.formatter import format_output, export_file
 from aws_inventory.nlq import generate_sql
 from aws_inventory.queries_lib import list_named_queries, load_named_query, prepare_query, _parse_header
@@ -615,6 +621,209 @@ def examples(service, number, search_term, db):
         conn.close()
 
 
+@main.command()
+@click.option('--from', 'from_date', default=None,
+              help='Start date (YYYY-MM-DD, datetime, or relative: 7d, 30d, yesterday)')
+@click.option('--to', 'to_date', default=None,
+              help='End date (default: current state)')
+@click.option('--account', '-a', default=None, shell_complete=complete_accounts,
+              help='Scope to an account (name, alias, or ID)')
+@click.option('--service', '-s', 'services', multiple=True, shell_complete=complete_services,
+              help='Filter to service(s)')
+@click.option('--region', '-r', 'regions', multiple=True, shell_complete=complete_regions,
+              help='Filter to region(s)')
+@click.option('--type', 'change_type', type=click.Choice(['all', 'added', 'removed', 'modified']),
+              default='all', help='Show only specific change types')
+@click.option('--format', '-f', 'fmt', type=click.Choice(['table', 'json', 'html']),
+              default='table', help='Output format')
+@click.option('--output', '-o', 'output_file', default=None, help='Output file path')
+@click.option('--summary', is_flag=True, help='Show summary counts only')
+@click.option('--ignore-tags', is_flag=True, help='Exclude tag changes from modification detection')
+@click.option('--db', default=None, help='Database path (default: ~/.awsmap/inventory.db)')
+def diff(from_date, to_date, account, services, regions, change_type, fmt, output_file,
+         summary, ignore_tags, db):
+    """Compare resource snapshots to detect drift.
+
+    \b
+    Examples:
+      awsmap diff --from 2026-01-15 --to 2026-02-09
+      awsmap diff --from 30d
+      awsmap diff --from 2026-01-15 -s ec2 -r us-east-1
+      awsmap diff --from 2026-01-15 --summary
+      awsmap diff --from 2026-01-15 -f html -o drift.html
+      awsmap diff --from 7d --type removed
+    """
+    if db is None:
+        db = get_config('db')
+
+    if not from_date:
+        click.echo("Error: --from is required. Example: awsmap diff --from 30d", err=True)
+        sys.exit(1)
+
+    # Parse services (support comma-separated)
+    services_list = None
+    if services:
+        services_list = []
+        for s in services:
+            services_list.extend([x.strip() for x in s.split(',')])
+
+    # Parse regions
+    regions_list = None
+    if regions:
+        regions_list = []
+        for r in regions:
+            regions_list.extend([x.strip() for x in r.split(',')])
+
+    # Open database
+    try:
+        conn = get_connection(db)
+    except Exception as e:
+        click.echo(f"Error opening database: {e}", err=True)
+        sys.exit(1)
+
+    # Resolve account
+    account_id = None
+    if account:
+        account_id = resolve_account_id(conn, account)
+        if not account_id:
+            accounts = get_accounts(conn)
+            click.echo(f"Error: '{account}' not found. Available accounts:", err=True)
+            for acct_id, alias, prof in accounts:
+                label = alias or prof or acct_id
+                click.echo(f"  {label} [{acct_id}]", err=True)
+            conn.close()
+            sys.exit(1)
+
+    # Normalize timestamps
+    try:
+        from_ts = normalize_timestamp(from_date)
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+        conn.close()
+        sys.exit(1)
+
+    # Build FROM snapshot
+    from_snapshot = reconstruct_snapshot(conn, from_ts,
+                                        account_id=account_id,
+                                        services=services_list,
+                                        regions=regions_list)
+    if not from_snapshot:
+        click.echo(f"Warning: No scan data found before {from_date}. "
+                   f"The 'from' snapshot is empty — all resources will appear as added.", err=True)
+
+    # Build TO snapshot
+    if to_date:
+        try:
+            to_ts = normalize_timestamp(to_date)
+        except ValueError as e:
+            click.echo(f"Error: {e}", err=True)
+            conn.close()
+            sys.exit(1)
+        to_snapshot = reconstruct_snapshot(conn, to_ts,
+                                          account_id=account_id,
+                                          services=services_list,
+                                          regions=regions_list)
+        if not to_snapshot and not from_snapshot:
+            click.echo(f"Error: No scan data found before {to_date}. Cannot compute diff.", err=True)
+            conn.close()
+            sys.exit(1)
+    else:
+        to_ts = None
+        to_snapshot = reconstruct_current_snapshot(conn,
+                                                   account_id=account_id,
+                                                   services=services_list,
+                                                   regions=regions_list)
+
+    # Check if both snapshots resolve to the same data
+    from_scan_ids = {r.get('scan_id') for r in from_snapshot.values()}
+    to_scan_ids = {r.get('scan_id') for r in to_snapshot.values()}
+    if from_snapshot and to_snapshot and from_scan_ids == to_scan_ids:
+        click.echo("\nBoth snapshots resolve to the same data. No drift detected.")
+        conn.close()
+        return
+
+    # Compute diff
+    diff_result = compute_diff(from_snapshot, to_snapshot, ignore_tags=ignore_tags)
+    diff_result['_summary'] = build_summary(diff_result)
+
+    # Build metadata for formatters
+    from_meta = snapshot_metadata(conn, from_ts, account_id=account_id,
+                                  services=services_list, regions=regions_list)
+    to_meta = snapshot_metadata(conn, to_ts, account_id=account_id,
+                                services=services_list, regions=regions_list) if to_ts else {
+        'service_count': len({r.get('service') for r in to_snapshot.values()}),
+        'latest_scan': 'current',
+        'services': sorted(s for s in {r.get('service') for r in to_snapshot.values()} if s),
+    }
+
+    acct_label = ''
+    acct_labels_map = {}
+    if account_id:
+        acct_label = f"{account_label(conn, account_id)} [{account_id}]"
+        acct_labels_map[account_id] = account_label(conn, account_id)
+    else:
+        accounts = get_accounts(conn)
+        if accounts:
+            labels = [f"{account_label(conn, a[0])} [{a[0]}]" for a in accounts]
+            acct_label = ', '.join(labels)
+            for a in accounts:
+                acct_labels_map[a[0]] = account_label(conn, a[0])
+
+    meta = {
+        'from_date': from_date,
+        'to_date': to_date or 'current',
+        'account_id': account_id,
+        'account_alias': acct_label,
+        'account_label': acct_label,
+        'account_labels': acct_labels_map,
+        'services_compared': from_meta.get('service_count', 0),
+        'from_info': f"{from_meta.get('service_count', 0)} services, "
+                     f"latest scan: {from_meta.get('latest_scan', 'none')}",
+        'to_info': f"{to_meta.get('service_count', 0)} services, "
+                   f"latest scan: {to_meta.get('latest_scan', 'none')}",
+        'from_snapshot': from_meta,
+        'to_snapshot': to_meta,
+    }
+
+    conn.close()
+
+    # Auto-detect format from file extension when not explicitly set
+    if output_file and fmt == 'table':
+        if output_file.endswith('.html') or output_file.endswith('.htm'):
+            fmt = 'html'
+        elif output_file.endswith('.json'):
+            fmt = 'json'
+
+    # Format output
+    if fmt == 'table':
+        output = format_diff_table(diff_result, meta,
+                                   summary_only=summary,
+                                   change_type=change_type)
+        if output_file:
+            with open(output_file, 'w') as f:
+                f.write(output)
+            click.echo(f"Drift report saved to: {output_file}")
+        else:
+            click.echo(output)
+    elif fmt == 'json':
+        output = format_diff_json(diff_result, meta, change_type=change_type)
+        if output_file:
+            with open(output_file, 'w') as f:
+                f.write(output)
+            click.echo(f"Drift report saved to: {output_file}")
+        else:
+            click.echo(output)
+    elif fmt == 'html':
+        output = format_diff_html(diff_result, meta, change_type=change_type)
+        if not output_file:
+            safe_from = from_date.replace(':', '-').replace(' ', '_')
+            safe_to = (to_date or 'current').replace(':', '-').replace(' ', '_')
+            output_file = f"drift_{safe_from}_to_{safe_to}.html"
+        with open(output_file, 'w') as f:
+            f.write(output)
+        click.echo(f"Drift report saved to: {output_file}")
+
+
 @main.group(invoke_without_command=True)
 @click.pass_context
 def config(ctx):
@@ -722,6 +931,74 @@ def completion(shell):
     comp_cls = get_completion_class(shell)
     comp = comp_cls(main, {}, "awsmap", "_AWSMAP_COMPLETE")
     click.echo(comp.source())
+
+
+@main.command()
+@click.option('--db', default=None, help='Database path (default: ~/.awsmap/demo.db)')
+@click.option('--accounts', default=3, type=click.IntRange(1, 5), help='Number of accounts (default: 3)')
+@click.option('--scans', default=3, type=click.IntRange(1, 5), help='Number of scans for drift (default: 3)')
+@click.option('--seed', default=42, type=int, help='Random seed for reproducibility (default: 42)')
+@click.option('--force', is_flag=True, help='Overwrite existing demo database')
+def demo(db, accounts, scans, seed, force):
+    """Generate a demo database with synthetic AWS inventory data.
+
+    Creates a realistic database covering all 150+ services, multiple accounts,
+    and multiple scans — so you can try query, ask, examples, and diff without
+    needing an AWS account.
+
+    \b
+    Examples:
+      awsmap demo                           Generate with defaults
+      awsmap demo --db ./demo.db            Custom path
+      awsmap demo --accounts 2 --scans 5    2 accounts, 5 scans each
+      awsmap demo --force                   Overwrite existing
+
+    \b
+    After generating, try:
+      awsmap query --db ~/.awsmap/demo.db -n admin-users
+      awsmap ask --db ~/.awsmap/demo.db show me all EC2 instances
+      awsmap diff --db ~/.awsmap/demo.db --from 30d
+      awsmap examples lambda 5 --db ~/.awsmap/demo.db
+    """
+    if db is None:
+        db = os.path.expanduser("~/.awsmap/demo.db")
+
+    if os.path.exists(db) and not force:
+        click.echo(f"Error: {db} already exists. Use --force to overwrite.", err=True)
+        sys.exit(1)
+
+    if os.path.exists(db) and force:
+        os.remove(db)
+
+    click.echo(f"\nGenerating demo database...")
+    click.echo(f"  Path: {db}")
+    click.echo(f"  Accounts: {accounts}")
+    click.echo(f"  Scans per account: {scans}")
+    click.echo(f"  Seed: {seed}")
+    click.echo()
+
+    def progress(msg):
+        click.echo(f"  {msg}")
+
+    try:
+        stats = generate_demo_db(db, n_accounts=accounts, n_scans=scans,
+                                 seed=seed, progress=progress)
+    except Exception as e:
+        click.echo(f"\nError: {e}", err=True)
+        sys.exit(1)
+
+    click.echo(f"\nDone! Generated {stats['total_resource_rows']:,} resource rows "
+               f"across {stats['scans']} scans.")
+    click.echo(f"  Services covered: {stats['services_covered']}")
+    click.echo(f"  Database: {stats['db_path']}")
+    click.echo(f"\nTry it:")
+    click.echo(f"  awsmap query --db {db} -n admin-users")
+    click.echo(f"  awsmap ask --db {db} show me all EC2 instances")
+    click.echo(f"  awsmap diff --db {db} --from 30d")
+    click.echo(f"  awsmap examples lambda 5 --db {db}")
+    click.echo(f"\nOr set it as default:")
+    click.echo(f"  awsmap config set db {db}")
+    click.echo()
 
 
 if __name__ == '__main__':

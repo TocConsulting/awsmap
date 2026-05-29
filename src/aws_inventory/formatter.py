@@ -5,7 +5,7 @@ Output formatters for inventory results - JSON, CSV, HTML.
 import json
 import csv
 import io
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 
 def format_json(data: Dict[str, Any]) -> str:
