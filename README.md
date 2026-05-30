@@ -16,6 +16,10 @@
 
 A fast, comprehensive tool for mapping and inventorying AWS resources across 150+ services and all regions.
 
+<p align="center">
+  <img src="assets/demo.gif" alt="awsmap demo: scan, SQL query, security queries, and natural-language ask" width="100%">
+</p>
+
 ## Features
 
 - **150+ AWS Services**: Covers compute, storage, database, networking, security, and more
