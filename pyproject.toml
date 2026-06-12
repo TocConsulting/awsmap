@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "awsmap"
-version = "1.7.0"
+version = "1.8.0"
 description = "A fast, comprehensive tool for mapping and inventorying AWS resources across 150+ services and all regions"
 readme = "README.md"
 requires-python = ">=3.9"

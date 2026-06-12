@@ -87,7 +87,7 @@ def _migrate(conn):
             pass
         # Mark resource as NOT current if a newer scan exists for same account+service.
         # This correctly handles partial scans (e.g., scan A has ec2+s3, scan B has lambda).
-        # AND is_current=1 makes it idempotent — concurrent processes find 0 rows.
+        # AND is_current=1 makes it idempotent - concurrent processes find 0 rows.
         conn.execute(
             "UPDATE resources SET is_current=0 "
             "WHERE is_current=1 AND EXISTS ("
@@ -164,6 +164,90 @@ def account_label(conn, account_id):
         if row[1]:
             return row[1]
     return account_id
+
+
+def list_scans(conn, account_id=None):
+    """Return scan rows (scan_id, timestamp, account_id, account_alias, profile,
+    resource_count, services_scanned) newest first."""
+    sql = ("SELECT scan_id, timestamp, account_id, account_alias, profile, "
+           "resource_count, services_scanned FROM scans")
+    params = []
+    if account_id:
+        sql += " WHERE account_id = ?"
+        params.append(account_id)
+    sql += " ORDER BY timestamp DESC, scan_id DESC"
+    return conn.execute(sql, params).fetchall()
+
+
+def resolve_scan(conn, selector, account_id=None):
+    """Resolve a scan selector to a scan_id.
+
+    selector: 'latest' | 'previous' | 'first' | <scan_id>. Returns None if it
+    cannot be resolved.
+    """
+    sel = (selector or "").strip()
+    where = []
+    params = []
+    if account_id:
+        where.append("account_id = ?")
+        params.append(account_id)
+    wsql = (" WHERE " + " AND ".join(where)) if where else ""
+    low = sel.lower()
+
+    if low == "latest":
+        rows = conn.execute(
+            "SELECT scan_id FROM scans" + wsql +
+            " ORDER BY timestamp DESC, scan_id DESC LIMIT 1", params).fetchall()
+        return rows[0][0] if rows else None
+    if low == "previous":
+        rows = conn.execute(
+            "SELECT scan_id FROM scans" + wsql +
+            " ORDER BY timestamp DESC, scan_id DESC LIMIT 2", params).fetchall()
+        return rows[1][0] if len(rows) > 1 else None
+    if low == "first":
+        rows = conn.execute(
+            "SELECT scan_id FROM scans" + wsql +
+            " ORDER BY timestamp ASC, scan_id ASC LIMIT 1", params).fetchall()
+        return rows[0][0] if rows else None
+
+    cond = where + ["scan_id = ?"]
+    row = conn.execute(
+        "SELECT scan_id FROM scans WHERE " + " AND ".join(cond),
+        params + [sel]).fetchone()
+    return row[0] if row else None
+
+
+def get_recent_scan_timestamps(conn, account_id=None):
+    """Return (latest_ts, prev_cutoff) for diff defaulting.
+
+    latest_ts is the most recent scan timestamp; prev_cutoff is the most recent
+    distinct timestamp strictly older than latest_ts. Either is None when there
+    are zero or one distinct scan timestamps.
+    """
+    sql = "SELECT DISTINCT timestamp FROM scans"
+    params = []
+    if account_id:
+        sql += " WHERE account_id = ?"
+        params.append(account_id)
+    sql += " ORDER BY timestamp DESC LIMIT 2"
+    rows = conn.execute(sql, params).fetchall()
+    if not rows:
+        return (None, None)
+    latest = rows[0][0]
+    prev = rows[1][0] if len(rows) > 1 else None
+    return (latest, prev)
+
+
+def get_scan_timestamp_before(conn, ts, account_id=None):
+    """Return the most recent scan timestamp strictly before ts, or None."""
+    sql = "SELECT timestamp FROM scans WHERE timestamp < ?"
+    params = [ts]
+    if account_id:
+        sql += " AND account_id = ?"
+        params.append(account_id)
+    sql += " ORDER BY timestamp DESC LIMIT 1"
+    row = conn.execute(sql, params).fetchone()
+    return row[0] if row else None
 
 
 def store_scan(conn, result, profile=None, account_alias=None, scanned_services=None):

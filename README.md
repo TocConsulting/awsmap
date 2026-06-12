@@ -24,17 +24,20 @@ A fast, comprehensive tool for mapping and inventorying AWS resources across 150
 
 - **150+ AWS Services**: Covers compute, storage, database, networking, security, and more
 - **Multi-Region**: Parallel scanning across all enabled regions
-- **Local Database**: Every scan auto-stored in SQLite — query your inventory offline
+- **Local Database**: Every scan auto-stored in SQLite - query your inventory offline
 - **SQL Query Engine**: Run SQL against your inventory history (`awsmap query "SELECT ..."`)
 - **Pre-Built Query Library**: 30 ready-to-use security and compliance queries (`awsmap query -n admin-users`)
-- **Natural Language Queries**: Ask questions in plain English — zero dependencies, works out of the box (`awsmap ask show me all EC2 without Owner tag`)
+- **Natural Language Queries**: Ask questions in plain English - zero dependencies, works out of the box (`awsmap ask show me all EC2 without Owner tag`)
 - **Examples Library**: 1381 ready-to-run questions organized by service (`awsmap examples lambda`)
 - **Multi-Account**: Scan multiple accounts, query across all of them
-- **Tag Filtering**: Filter by tags — multiple values for same tag match ANY (Owner=John OR Jane), different tags match ALL (Owner=John AND Environment=Production)
+- **Tag Filtering**: Filter by tags - multiple values for same tag match ANY (Owner=John OR Jane), different tags match ALL (Owner=John AND Environment=Production)
 - **Beautiful HTML Reports**: Interactive reports with search, filters, dark mode, and export
 - **Multiple Outputs**: JSON, CSV, and HTML formats
 - **Fast**: Parallel execution with 40 workers (~2 minutes for typical accounts)
-- **Drift Detection**: Compare snapshots over time — detect added, removed, and modified resources (`awsmap diff`)
+- **Drift Detection**: Compare snapshots over time - detect added, removed, and modified resources (`awsmap diff`)
+- **Waste Detection**: Find idle or wasteful resources from collected data, no extra API calls (`awsmap waste`)
+- **Tag Compliance**: Audit tagging coverage and score against required tags (`awsmap tags`)
+- **Scan-Scoped Queries**: Query any point in your scan history, not just the current state (`awsmap query --scan`, `awsmap ask --scan`)
 - **Console Login Support**: Works with `aws login` credential provider
 
 ## Installation
@@ -130,7 +133,7 @@ awsmap -p myprofile --no-db
 
 ## Multi-Account
 
-Scan multiple AWS accounts. Each scan is stored in the same local database — query across all of them.
+Scan multiple AWS accounts. Each scan is stored in the same local database - query across all of them.
 
 ```bash
 # Scan different accounts (different profiles)
@@ -251,7 +254,7 @@ You can also add your own queries by placing `.sql` files in `~/.awsmap/queries/
 
 ### Natural Language Queries
 
-Ask questions about your inventory in plain English using `awsmap ask`. **No setup required** — works out of the box with a built-in zero-dependency parser.
+Ask questions about your inventory in plain English using `awsmap ask`. **No setup required** - works out of the box with a built-in zero-dependency parser.
 
 ```bash
 awsmap ask how many resources per region
@@ -295,9 +298,12 @@ awsmap ask -a production show me Lambda functions
 
 ## Drift Detection
 
-Compare snapshots of your AWS inventory over time to detect what changed — resources added, removed, or modified.
+Compare snapshots of your AWS inventory over time to detect what changed - resources added, removed, or modified.
 
 ```bash
+# What did the most recent scan change? (no arguments: previous scan vs current)
+awsmap diff
+
 # What changed in the last 7 days?
 awsmap diff --from 7d
 
@@ -327,14 +333,110 @@ awsmap diff --from 7d -f json -o drift-report.json
 awsmap diff --from 7d -f html -o drift-report.html
 ```
 
-**How it works:** awsmap reconstructs point-in-time snapshots from your scan history. For each `(account, service)`, it finds the latest scan at or before the given date, then compares the two snapshots field by field. This correctly handles partial scans — if you scanned EC2 on Monday and S3 on Tuesday, each service uses its own latest scan.
+**How it works:** awsmap reconstructs point-in-time snapshots from your scan history. For each `(account, service)`, it finds the latest scan at or before the given date, then compares the two snapshots field by field. This correctly handles partial scans - if you scanned EC2 on Monday and S3 on Tuesday, each service uses its own latest scan.
+
+With no `--from`, `awsmap diff` compares the state before the most recent scan against the current state, so you can see exactly what your latest scan changed. `--to` without `--from` defaults `--from` to the scan immediately before `--to`.
 
 **Relative dates:** `7d`, `30d`, `90d`, `yesterday`, `today`, or exact dates like `2026-01-15`.
 
 **Change types:**
-- **Added** — resource exists in the newer snapshot but not the older one
-- **Removed** — resource exists in the older snapshot but not the newer one
-- **Modified** — resource exists in both but details, tags, or name changed (with field-level diffs)
+- **Added** - resource exists in the newer snapshot but not the older one
+- **Removed** - resource exists in the older snapshot but not the newer one
+- **Modified** - resource exists in both but details, tags, or name changed (with field-level diffs)
+
+## Waste Detection
+
+Find idle or potentially wasteful resources from the data awsmap already collected. No new AWS API calls - the rules run over your latest stored snapshot.
+
+```bash
+# Run all rules against the current snapshot
+awsmap waste
+
+# Counts per rule only
+awsmap waste --summary
+
+# Scope to one account (by profile name, alias, or account ID)
+awsmap waste -a production
+
+# Run only specific rules
+awsmap waste -t unattached-ebs -t available-eni
+
+# Change the age threshold for snapshots and AMIs (default 90 days)
+awsmap waste --min-age-days 180
+
+# Include default AWS resources (excluded by default)
+awsmap waste --include-defaults
+
+# HTML report (interactive, with filters and dark mode)
+awsmap waste -f html -o waste.html
+```
+
+**Rules:**
+
+| Rule key | What it flags |
+|----------|---------------|
+| `unattached-ebs` | EBS volumes in the `available` state |
+| `unassociated-eip` | Elastic IPs not attached to an instance or network interface |
+| `available-eni` | Network interfaces in the `available` (detached) state |
+| `idle-target-group` | Target groups with no registered targets |
+| `empty-classic-elb` | Classic load balancers with no instances |
+| `old-snapshot` | EBS snapshots older than `--min-age-days` (default 90) |
+| `old-ami` | AMIs older than `--min-age-days` (default 90) |
+| `stopped-instance` | EC2 instances in the `stopped` state |
+
+awsmap reports counts and the resources to act on. It does not estimate dollar costs. Output is `table` (default), `json`, or `html`; `is_default` resources are excluded unless you pass `--include-defaults`.
+
+## Tag Compliance
+
+Audit tagging coverage across your inventory and score it against a set of required tags. Operates on already-collected data.
+
+```bash
+# Coverage of "has at least one tag"
+awsmap tags
+
+# Compliance against required tags
+awsmap tags -R Owner,Environment,CostCenter
+
+# Scope to an account and service, list only non-compliant resources
+awsmap tags -a production -s ec2 --noncompliant-only
+
+# List only resources with zero tags
+awsmap tags --untagged-only
+
+# Score only, no resource listing
+awsmap tags -R Owner --summary
+
+# HTML report
+awsmap tags -R Owner,Environment -f html -o tag-compliance.html
+```
+
+The report shows an overall compliance score, per-required-tag coverage (so you can see which tag is the gap), a per-service breakdown, and the list of non-compliant resources with their missing tags.
+
+- Required tags come from `-R/--required` (comma-separated or repeatable) or the `required_tags` config key. With neither set, compliance falls back to "has at least one tag".
+- A blank tag value (for example `Owner=`) counts as missing.
+- `is_default` resources are excluded by default; pass `--include-defaults` to keep them.
+- Set a default required set once: `awsmap config set required_tags Owner,Environment,CostCenter`.
+- Output is `table` (default), `json`, or `html`.
+
+## Querying a Specific Scan
+
+By default `query` and `ask` run against the current snapshot (`is_current`). Use `--scan` to target any scan in your history.
+
+```bash
+# List stored scans
+awsmap query --list-scans
+
+# Run a named query against the previous scan
+awsmap query --scan previous -n admin-users
+
+# Raw SQL against the latest scan (use the {scan_filter} placeholder)
+awsmap query --scan latest "SELECT service, COUNT(*) FROM resources WHERE {scan_filter} GROUP BY service"
+
+# Natural language against the first (oldest) scan
+awsmap ask --scan first show me ec2 instances
+```
+
+Selectors: `latest`, `previous`, `first`, or an explicit `<scan_id>` (see `--list-scans`). Named queries, files, and `ask` apply the scope automatically. For raw inline SQL, include the `{scan_filter}` placeholder where the scope should go; using `--scan` on raw SQL without the placeholder reports an error instead of running an unscoped query.
 
 ## Demo Database
 
@@ -406,6 +508,8 @@ awsmap config set db ~/.awsmap/demo.db
 | `-S, --show` | Show SQL of a named query without running it |
 | `-P, --param` | Parameter for named query (`key=value`, multiple allowed) |
 | `-a, --account` | Scope to an account (account ID, account alias, or AWS profile) |
+| `--scan` | Scope to a scan: `latest`, `previous`, `first`, or a `<scan_id>` (raw SQL needs the `{scan_filter}` placeholder) |
+| `--list-scans` | List stored scans and exit |
 | `--db` | Database path (default: `~/.awsmap/inventory.db`) |
 | `-f, --format` | Output format: `table` (default), `json`, `csv` |
 
@@ -414,13 +518,14 @@ awsmap config set db ~/.awsmap/demo.db
 | Option | Description |
 |--------|-------------|
 | `-a, --account` | Scope to an account (account ID, account alias, or AWS profile) |
+| `--scan` | Scope to a scan: `latest`, `previous`, `first`, or a `<scan_id>` |
 | `--db` | Database path (default: `~/.awsmap/inventory.db`) |
 
 ### Diff Options (`awsmap diff`)
 
 | Option | Description |
 |--------|-------------|
-| `--from` | Start date for comparison (**required**). Supports: `YYYY-MM-DD`, `7d`, `30d`, `yesterday`, `today` |
+| `--from` | Start date for comparison. Supports: `YYYY-MM-DD`, `7d`, `30d`, `yesterday`, `today`. If omitted, compares the previous scan against the current state |
 | `--to` | End date (default: current state). Same date formats as `--from` |
 | `-a, --account` | Scope to an account (account ID, alias, or profile) |
 | `-s, --service` | Service(s) to compare (comma-separated or multiple flags) |
@@ -428,6 +533,34 @@ awsmap config set db ~/.awsmap/demo.db
 | `--type` | Show only one change type: `all` (default), `added`, `removed`, or `modified` |
 | `--summary` | Show summary counts only, no resource details |
 | `--ignore-tags` | Ignore tag-only changes |
+| `-f, --format` | Output format: `table` (default), `json`, `html` |
+| `-o, --output` | Output file path |
+| `--db` | Database path (default: `~/.awsmap/inventory.db`) |
+
+### Waste Options (`awsmap waste`)
+
+| Option | Description |
+|--------|-------------|
+| `-a, --account` | Scope to an account (account ID, alias, or profile) |
+| `-t, --type` | Run only specific rule key(s) (comma-separated or multiple flags) |
+| `--min-age-days` | Age threshold for `old-snapshot` and `old-ami` (default: 90) |
+| `--include-defaults` | Include default AWS resources (excluded by default) |
+| `--summary` | Show counts per rule only, no resource listing |
+| `-f, --format` | Output format: `table` (default), `json`, `html` |
+| `-o, --output` | Output file path |
+| `--db` | Database path (default: `~/.awsmap/inventory.db`) |
+
+### Tags Options (`awsmap tags`)
+
+| Option | Description |
+|--------|-------------|
+| `-R, --required` | Required tag key(s) (comma-separated or repeatable). Falls back to the `required_tags` config key |
+| `-a, --account` | Scope to an account (account ID, alias, or profile) |
+| `-s, --service` | Scope to service(s) (comma-separated or multiple flags) |
+| `--untagged-only` | List only resources with zero tags |
+| `--noncompliant-only` | List only resources missing a required tag |
+| `--include-defaults` | Include default AWS resources (excluded by default) |
+| `--summary` | Show scores only, no resource listing |
 | `-f, --format` | Output format: `table` (default), `json`, `html` |
 | `-o, --output` | Output file path |
 | `--db` | Database path (default: `~/.awsmap/inventory.db`) |
@@ -445,7 +578,7 @@ awsmap config set db ~/.awsmap/demo.db
 
 Set persistent defaults so you don't have to repeat CLI flags. CLI flags always override config values.
 
-Only the keys listed below are accepted — unknown keys and invalid values are rejected. If the config file is manually edited and contains invalid entries, `awsmap config list` detects them, warns you, and auto-cleans the file.
+Only the keys listed below are accepted - unknown keys and invalid values are rejected. If the config file is manually edited and contains invalid entries, `awsmap config list` detects them, warns you, and auto-cleans the file.
 
 | Command | Description |
 |---------|-------------|
@@ -466,6 +599,7 @@ Only the keys listed below are accepted — unknown keys and invalid values are 
 | `exclude_defaults` | `awsmap` (scan) | Exclude default AWS resources (`true`/`false`) | `awsmap config set exclude_defaults true` |
 | `db` | `query`, `ask` | Default database path | `awsmap config set db /path/to/inventory.db` |
 | `query_format` | `query` | Default query output format (`table`, `json`, `csv`) | `awsmap config set query_format csv` |
+| `required_tags` | `tags` | Default required tag keys (comma-separated) | `awsmap config set required_tags Owner,Environment,CostCenter` |
 
 ```bash
 # Set your usual profile and regions
@@ -679,23 +813,82 @@ awsmap -p myprofile -r us-east-1,eu-west-1
 
 ## IAM Permissions
 
-awsmap requires read-only access to the AWS services you want to inventory.
+Only scanning (`awsmap`) calls AWS, and it needs read-only access to the services you want to inventory. The analysis commands (`query`, `ask`, `diff`, `waste`, `tags`) run entirely against your local database and require no AWS permissions.
 
-**Recommended:** Attach the AWS managed [`ReadOnlyAccess`](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/ReadOnlyAccess.html) policy to your IAM user or role. This policy is maintained by AWS and provides read access across all services.
+Beyond the per-service read actions, a scan calls `sts:GetCallerIdentity`, `account:ListRegions` (to discover enabled regions; falls back to a built-in region list if denied), and `iam:ListAccountAliases` (for the account alias).
+
+### Recommended: ReadOnlyAccess plus a small supplement
+
+Attach the AWS managed [`ReadOnlyAccess`](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/ReadOnlyAccess.html) policy. It is maintained by AWS and covers the large majority of awsmap's read calls.
+
+`ReadOnlyAccess` does not cover everything, though: it lags on some newer services (Amazon Location, MediaTailor, Timestream for InfluxDB, Textract adapters) and deliberately omits a few read actions (for example `glue:GetConnections`). awsmap calls 26 read actions that `ReadOnlyAccess` does not grant. They were computed by diffing awsmap's exact API calls against the live `ReadOnlyAccess` document, so the list is the precise difference, not a guess.
+
+Attach this supplemental policy alongside `ReadOnlyAccess`:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "awsmapSupplementalReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "airflow:GetEnvironment",
+        "bedrock:ListTagsForResource",
+        "codeartifact:ListPackageGroups",
+        "fms:GetResourceSet",
+        "fms:ListResourceSets",
+        "geo:ListGeofenceCollections",
+        "geo:ListMaps",
+        "geo:ListPlaceIndexes",
+        "geo:ListRouteCalculators",
+        "geo:ListTrackers",
+        "glue:GetConnections",
+        "mediatailor:ListChannels",
+        "mediatailor:ListPlaybackConfigurations",
+        "mediatailor:ListSourceLocations",
+        "quicksight:ListAnalyses",
+        "quicksight:ListDashboards",
+        "quicksight:ListDataSets",
+        "quicksight:ListDataSources",
+        "quicksight:ListTagsForResource",
+        "rekognition:DescribeCollection",
+        "textract:GetAdapter",
+        "textract:ListAdapters",
+        "timestream-influxdb:GetDbInstance",
+        "timestream-influxdb:ListDbInstances",
+        "timestream-influxdb:ListDbParameterGroups",
+        "timestream-influxdb:ListTagsForResource"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Attach both to a role (or use `attach-user-policy` for a user):
 
 ```bash
-# Attach to a role
+# 1. Attach the AWS managed ReadOnlyAccess policy
 aws iam attach-role-policy \
   --role-name YourRoleName \
   --policy-arn arn:aws:iam::aws:policy/ReadOnlyAccess
 
-# Attach to a user
-aws iam attach-user-policy \
-  --user-name YourUserName \
-  --policy-arn arn:aws:iam::aws:policy/ReadOnlyAccess
+# 2. Create the supplemental policy from the JSON above and attach it
+aws iam create-policy \
+  --policy-name awsmap-supplemental-readonly \
+  --policy-document file://awsmap-supplemental-readonly.json
+
+aws iam attach-role-policy \
+  --role-name YourRoleName \
+  --policy-arn arn:aws:iam::<account-id>:policy/awsmap-supplemental-readonly
 ```
 
-For more restrictive access, you can create a custom policy with explicit read actions for specific services (e.g., `ec2:Describe*`, `s3:List*`, `s3:Get*`). See the [IAM Actions Reference](https://docs.aws.amazon.com/service-authorization/latest/reference/reference_policies_actions-resources-contextkeys.html) for service-specific actions.
+Every collector call is wrapped so a denied permission never stops a scan: the affected resources are simply skipped. The supplement only removes those blind spots so the inventory is complete. All 26 actions are read-only.
+
+### Alternative: no managed policy
+
+If you cannot use `ReadOnlyAccess`, grant read actions (`Describe*`, `List*`, `Get*`, plus `BatchGet*`/`Search*` where applicable) for the services awsmap scans, together with the supplemental actions above. The full standalone list covers about 150 service prefixes; see the [IAM Service Authorization Reference](https://docs.aws.amazon.com/service-authorization/latest/reference/reference_policies_actions-resources-contextkeys.html) for per-service read actions.
 
 ## What's NOT Collected
 
@@ -726,7 +919,7 @@ We evaluated three approaches for natural language queries:
 | **OpenAI / Anthropic APIs** | ~95% | Pay per query | Network dependent | No |
 | **Built-in parser (awsmap)** | **100%** | **Free** | **Instant** | **Yes** |
 
-- **Ollama** models are free and run locally, but when tested against real AWS inventory queries, accuracy was around 80% — one in five queries would generate wrong SQL or fail silently. Not acceptable for a CLI tool where users trust the output.
+- **Ollama** models are free and run locally, but when tested against real AWS inventory queries, accuracy was around 80% - one in five queries would generate wrong SQL or fail silently. Not acceptable for a CLI tool where users trust the output.
 - **OpenAI / Anthropic APIs** produce better results, but require API keys, cost money per query, and depend on network connectivity. Not ideal for an infrastructure tool that should just work.
 - **Built-in parser** is a zero-dependency, deterministic NL-to-SQL engine. It's tested against **1500 realistic test questions with a 100% pass rate** (separate from the 1381 examples library). It covers listing, counting, aggregation, region filters, negation, tags, multi-service queries, synonyms, typo tolerance, relative time, numeric fields, keyword-value patterns, and 150+ AWS services. No API keys, no network, no cost, instant results.
 

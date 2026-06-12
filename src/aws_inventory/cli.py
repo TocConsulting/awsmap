@@ -17,14 +17,17 @@ from aws_inventory.auth import create_session, validate_credentials, get_account
 from aws_inventory.collector import collect_all, get_available_services, validate_services
 from aws_inventory.config import get_config, set_config, delete_config, list_config, validate_file, _VALID_KEYS
 from aws_inventory.db import (get_connection, store_scan, get_accounts, resolve_account_id,
-                               account_label, run_query, format_table)
+                               account_label, run_query, format_table,
+                               get_recent_scan_timestamps, get_scan_timestamp_before,
+                               list_scans, resolve_scan)
 from aws_inventory.examples import (list_services as examples_list_services,
                                      list_questions as examples_list_questions,
                                      resolve_service as examples_resolve_service,
                                      search as examples_search, total_count as examples_total)
 from aws_inventory.completions import (complete_services, complete_regions, complete_profiles,
                                        complete_query_names, complete_accounts, complete_config_keys,
-                                       complete_example_services, complete_example_numbers)
+                                       complete_example_services, complete_example_numbers,
+                                       complete_waste_rules, complete_scan_selectors)
 from aws_inventory.diff import (normalize_timestamp, reconstruct_snapshot,
                                 reconstruct_current_snapshot, compute_diff,
                                 build_summary, snapshot_metadata)
@@ -32,6 +35,10 @@ from aws_inventory.demo import generate_demo_db
 from aws_inventory.diff_formatter import format_diff_table, format_diff_json, format_diff_html
 from aws_inventory.formatter import format_output, export_file
 from aws_inventory.nlq import generate_sql
+from aws_inventory.tags_audit import audit_tags
+from aws_inventory.tags_formatter import format_tags_table, format_tags_json, format_tags_html
+from aws_inventory.waste import find_waste, RULE_KEYS
+from aws_inventory.waste_formatter import format_waste_table, format_waste_json, format_waste_html
 from aws_inventory.queries_lib import list_named_queries, load_named_query, prepare_query, _parse_header
 
 
@@ -298,9 +305,11 @@ def main(
 @click.option('--show', '-S', 'show_name', default=None, shell_complete=complete_query_names, help='Show SQL of a named query without running it')
 @click.option('--param', '-P', 'params', multiple=True, help='Parameter for named query (key=value)')
 @click.option('--account', '-a', default=None, shell_complete=complete_accounts, help='Scope to an account (name, alias, or ID)')
+@click.option('--scan', 'scan_sel', default=None, shell_complete=complete_scan_selectors, help='Scope to a scan: latest | previous | first | <scan_id>')
+@click.option('--list-scans', 'list_scans_flag', is_flag=True, help='List stored scans and exit')
 @click.option('--db', default=None, help='Database path (default: ~/.awsmap/inventory.db)')
 @click.option('--format', '-f', 'fmt', type=click.Choice(['table', 'json', 'csv']), default='table', help='Output format')
-def query(sql, query_name, query_file, list_queries, show_name, params, account, db, fmt):
+def query(sql, query_name, query_file, list_queries, show_name, params, account, scan_sel, list_scans_flag, db, fmt):
     """Run SQL query against the local inventory database.
 
     Three ways to query:
@@ -319,6 +328,12 @@ def query(sql, query_name, query_file, list_queries, show_name, params, account,
     List and inspect:
       awsmap query --list                List all pre-built queries
       awsmap query --show admin-users    Show the SQL without running
+      awsmap query --list-scans          List stored scans
+
+    \b
+    Scope to a specific scan (latest | previous | first | <scan_id>):
+      awsmap query --scan previous -n admin-users
+      awsmap query --scan latest "SELECT service, COUNT(*) FROM resources WHERE {scan_filter} GROUP BY service"
     """
     # Apply config defaults
     if db is None:
@@ -344,6 +359,26 @@ def query(sql, query_name, query_file, list_queries, show_name, params, account,
         click.echo(f"\n({len(queries)} queries)")
         return
 
+    # --list-scans: show stored scans and exit
+    if list_scans_flag:
+        try:
+            conn_tmp = get_connection(db)
+        except Exception as e:
+            click.echo(f"Error opening database: {e}", err=True)
+            sys.exit(1)
+        scans = list_scans(conn_tmp)
+        conn_tmp.close()
+        if not scans:
+            click.echo("No scans found. Run 'awsmap' first.", err=True)
+            sys.exit(1)
+        click.echo(f"{'scan_id':<18}  {'timestamp':<24}  {'account':<22}  {'resources':>9}")
+        click.echo(f"{'-' * 18}  {'-' * 24}  {'-' * 22}  {'-' * 9}")
+        for scan_id, timestamp, acct, alias, profile, count, _ in scans:
+            label = f"{alias or profile or acct} [{acct}]"
+            click.echo(f"{scan_id:<18}  {str(timestamp):<24}  {label:<22}  {count or 0:>9}")
+        click.echo(f"\n({len(scans)} scans)")
+        return
+
     # --show: display SQL of named query and exit
     if show_name:
         try:
@@ -357,6 +392,29 @@ def query(sql, query_name, query_file, list_queries, show_name, params, account,
         click.echo()
         click.echo(raw_sql)
         return
+
+    # Resolve account and scan scope once (single DB touch).
+    account_id = None
+    scan_id = None
+    if account or scan_sel:
+        try:
+            conn_tmp = get_connection(db)
+        except Exception as e:
+            click.echo(f"Error opening database: {e}", err=True)
+            sys.exit(1)
+        if account:
+            account_id = resolve_account_id(conn_tmp, account)
+            if not account_id:
+                click.echo(f"Error: account '{account}' not found. Use 'awsmap query --list-scans'.", err=True)
+                conn_tmp.close()
+                sys.exit(1)
+        if scan_sel:
+            scan_id = resolve_scan(conn_tmp, scan_sel, account_id)
+            if not scan_id:
+                click.echo(f"Error: scan '{scan_sel}' not found. Use 'awsmap query --list-scans'.", err=True)
+                conn_tmp.close()
+                sys.exit(1)
+        conn_tmp.close()
 
     # Determine SQL source
     if query_name:
@@ -374,17 +432,8 @@ def query(sql, query_name, query_file, list_queries, show_name, params, account,
             else:
                 click.echo(f"Error: Invalid param '{p}'. Use key=value format.", err=True)
                 sys.exit(1)
-        # Resolve account
-        account_id = None
-        if account:
-            try:
-                conn_tmp = get_connection(db)
-                account_id = resolve_account_id(conn_tmp, account)
-                conn_tmp.close()
-            except Exception as e:
-                click.echo(f"Error: {e}", err=True)
-                sys.exit(1)
-        elif 'account' in param_dict:
+        # An 'account' param resolves to account scope when --account was not given
+        if account_id is None and 'account' in param_dict:
             try:
                 conn_tmp = get_connection(db)
                 account_id = resolve_account_id(conn_tmp, param_dict.pop('account'))
@@ -392,7 +441,9 @@ def query(sql, query_name, query_file, list_queries, show_name, params, account,
             except Exception as e:
                 click.echo(f"Error: {e}", err=True)
                 sys.exit(1)
-        sql = prepare_query(raw_sql, meta, account_id=account_id, params=param_dict)
+        else:
+            param_dict.pop('account', None)
+        sql = prepare_query(raw_sql, meta, account_id=account_id, params=param_dict, scan_id=scan_id)
     elif query_file:
         with open(query_file) as f:
             text = f.read()
@@ -415,18 +466,18 @@ def query(sql, query_name, query_file, list_queries, show_name, params, account,
             else:
                 click.echo(f"Error: Invalid param '{p}'. Use key=value format.", err=True)
                 sys.exit(1)
-        # Resolve account
-        account_id = None
-        if account:
-            try:
-                conn_tmp = get_connection(db)
-                account_id = resolve_account_id(conn_tmp, account)
-                conn_tmp.close()
-            except Exception as e:
-                click.echo(f"Error: {e}", err=True)
-                sys.exit(1)
-        sql = prepare_query(raw_sql, meta, account_id=account_id, params=param_dict)
-    elif sql is None:
+        sql = prepare_query(raw_sql, meta, account_id=account_id, params=param_dict, scan_id=scan_id)
+    elif sql is not None:
+        # Raw inline SQL. {scan_filter} is substituted when present so --scan /
+        # --account can scope it; without the placeholder, scan scoping cannot be
+        # applied and we say so rather than run an unscoped query silently.
+        if '{scan_filter}' in sql:
+            sql = prepare_query(sql, {}, account_id=account_id, params={}, scan_id=scan_id)
+        elif scan_id:
+            click.echo("Error: --scan needs {scan_filter} in your SQL "
+                       "(e.g. WHERE ... AND {scan_filter}), or use --name / --file / ask.", err=True)
+            sys.exit(1)
+    else:
         click.echo("Error: Provide SQL, --name, or --file. Use --list to see pre-built queries.", err=True)
         sys.exit(1)
 
@@ -461,8 +512,9 @@ def query(sql, query_name, query_file, list_queries, show_name, params, account,
 @main.command()
 @click.argument('question', nargs=-1, required=True)
 @click.option('--account', '-a', default=None, shell_complete=complete_accounts, help='Scope to an account (name, alias, profile, or ID)')
+@click.option('--scan', 'scan_sel', default=None, shell_complete=complete_scan_selectors, help='Scope to a scan: latest | previous | first | <scan_id>')
 @click.option('--db', default=None, help='Database path (default: ~/.awsmap/inventory.db)')
-def ask(question, account, db):
+def ask(question, account, scan_sel, db):
     """Ask a question about your inventory in natural language.
 
     Examples:
@@ -471,7 +523,7 @@ def ask(question, account, db):
 
         awsmap ask -a prod how many resources per region
 
-        awsmap ask -a 123456789012 show me Lambda functions
+        awsmap ask --scan previous show me Lambda functions
     """
     # Apply config defaults
     if db is None:
@@ -503,15 +555,26 @@ def ask(question, account, db):
             conn.close()
             sys.exit(1)
 
+    # Resolve scan scope
+    scan_id = None
+    if scan_sel:
+        scan_id = resolve_scan(conn, scan_sel, account_id)
+        if not scan_id:
+            click.echo(f"Error: scan '{scan_sel}' not found. Use 'awsmap query --list-scans'.", err=True)
+            conn.close()
+            sys.exit(1)
+
     # Show account scope
     if account_id:
         click.echo(f"  Account: {account_label(conn, account_id)} [{account_id}]")
     else:
         labels = [f"{account_label(conn, a[0])} [{a[0]}]" for a in accounts]
         click.echo(f"  Accounts: {', '.join(labels)}")
+    if scan_id:
+        click.echo(f"  Scan: {scan_id}")
 
     try:
-        sql = generate_sql(question_str, conn=conn, account_id=account_id)
+        sql = generate_sql(question_str, conn=conn, account_id=account_id, scan_id=scan_id)
     except Exception as e:
         click.echo(f"Error generating SQL: {e}", err=True)
         conn.close()
@@ -646,19 +709,19 @@ def diff(from_date, to_date, account, services, regions, change_type, fmt, outpu
 
     \b
     Examples:
+      awsmap diff
       awsmap diff --from 2026-01-15 --to 2026-02-09
       awsmap diff --from 30d
       awsmap diff --from 2026-01-15 -s ec2 -r us-east-1
       awsmap diff --from 2026-01-15 --summary
       awsmap diff --from 2026-01-15 -f html -o drift.html
       awsmap diff --from 7d --type removed
+
+    With no --from, compares the state before the most recent scan against the
+    current state (what the latest scan changed).
     """
     if db is None:
         db = get_config('db')
-
-    if not from_date:
-        click.echo("Error: --from is required. Example: awsmap diff --from 30d", err=True)
-        sys.exit(1)
 
     # Parse services (support comma-separated)
     services_list = None
@@ -694,6 +757,38 @@ def diff(from_date, to_date, account, services, regions, change_type, fmt, outpu
             conn.close()
             sys.exit(1)
 
+    # Default --from to the previous scan when omitted.
+    from_label = from_date
+    if not from_date:
+        if to_date:
+            try:
+                to_bound = normalize_timestamp(to_date)
+            except ValueError as e:
+                click.echo(f"Error: {e}", err=True)
+                conn.close()
+                sys.exit(1)
+            prev = get_scan_timestamp_before(conn, to_bound, account_id)
+            if prev is None:
+                click.echo("Error: No scan found before --to to compare against. "
+                           "Provide --from (e.g. --from 30d).", err=True)
+                conn.close()
+                sys.exit(1)
+            from_date = prev
+            from_label = f"previous scan ({prev})"
+        else:
+            latest_ts, prev_cutoff = get_recent_scan_timestamps(conn, account_id)
+            if latest_ts is None:
+                click.echo("No scans found. Run 'awsmap' first.", err=True)
+                conn.close()
+                sys.exit(1)
+            if prev_cutoff is None:
+                click.echo("Only one scan on record - nothing to compare against. "
+                           "Run another scan, or use --from (e.g. --from 30d).", err=True)
+                conn.close()
+                sys.exit(1)
+            from_date = prev_cutoff
+            from_label = f"previous scan ({prev_cutoff})"
+
     # Normalize timestamps
     try:
         from_ts = normalize_timestamp(from_date)
@@ -709,7 +804,7 @@ def diff(from_date, to_date, account, services, regions, change_type, fmt, outpu
                                         regions=regions_list)
     if not from_snapshot:
         click.echo(f"Warning: No scan data found before {from_date}. "
-                   f"The 'from' snapshot is empty — all resources will appear as added.", err=True)
+                   f"The 'from' snapshot is empty - all resources will appear as added.", err=True)
 
     # Build TO snapshot
     if to_date:
@@ -770,7 +865,7 @@ def diff(from_date, to_date, account, services, regions, change_type, fmt, outpu
                 acct_labels_map[a[0]] = account_label(conn, a[0])
 
     meta = {
-        'from_date': from_date,
+        'from_date': from_label,
         'to_date': to_date or 'current',
         'account_id': account_id,
         'account_alias': acct_label,
@@ -822,6 +917,199 @@ def diff(from_date, to_date, account, services, regions, change_type, fmt, outpu
         with open(output_file, 'w') as f:
             f.write(output)
         click.echo(f"Drift report saved to: {output_file}")
+
+
+@main.command()
+@click.option('--required', '-R', multiple=True,
+              help='Required tag key(s) (comma-separated or repeatable)')
+@click.option('--account', '-a', default=None, shell_complete=complete_accounts,
+              help='Scope to an account (name, alias, or ID)')
+@click.option('--service', '-s', 'services', multiple=True, shell_complete=complete_services,
+              help='Scope to service(s)')
+@click.option('--untagged-only', is_flag=True, help='List only resources with zero tags')
+@click.option('--noncompliant-only', is_flag=True, help='List only resources missing a required tag')
+@click.option('--include-defaults', is_flag=True, help='Include default AWS resources')
+@click.option('--format', '-f', 'fmt', type=click.Choice(['table', 'json', 'html']),
+              default='table', help='Output format')
+@click.option('--output', '-o', 'output_file', default=None, help='Output file path')
+@click.option('--summary', is_flag=True, help='Scores only, no resource listing')
+@click.option('--db', default=None, help='Database path (default: ~/.awsmap/inventory.db)')
+def tags(required, account, services, untagged_only, noncompliant_only,
+         include_defaults, fmt, output_file, summary, db):
+    """Audit tag-compliance coverage across your inventory.
+
+    \b
+    Examples:
+      awsmap tags
+      awsmap tags -R Owner,Environment,CostCenter
+      awsmap tags -a prod -s ec2 --noncompliant-only
+      awsmap tags -R Owner -f html -o tag-compliance.html
+    """
+    if db is None:
+        db = get_config('db')
+
+    if untagged_only and noncompliant_only:
+        click.echo("Error: --untagged-only and --noncompliant-only are mutually exclusive.", err=True)
+        sys.exit(1)
+
+    required_list = []
+    for r in required:
+        required_list.extend([x.strip() for x in r.split(',') if x.strip()])
+    if not required_list:
+        cfg_req = get_config('required_tags')
+        if cfg_req:
+            required_list = [x.strip() for x in cfg_req.split(',') if x.strip()]
+
+    services_list = None
+    if services:
+        services_list = []
+        for s in services:
+            services_list.extend([x.strip() for x in s.split(',')])
+
+    try:
+        conn = get_connection(db)
+    except Exception as e:
+        click.echo(f"Error opening database: {e}", err=True)
+        sys.exit(1)
+
+    account_id = None
+    if account:
+        account_id = resolve_account_id(conn, account)
+        if not account_id:
+            accounts = get_accounts(conn)
+            click.echo(f"Error: '{account}' not found. Available accounts:", err=True)
+            for acct_id, alias, prof in accounts:
+                click.echo(f"  {alias or prof or acct_id} [{acct_id}]", err=True)
+            conn.close()
+            sys.exit(1)
+
+    result = audit_tags(conn, account_id=account_id, services=services_list,
+                        required=required_list, include_defaults=include_defaults)
+
+    if account_id:
+        acct_label = f"{account_label(conn, account_id)} [{account_id}]"
+    else:
+        accounts = get_accounts(conn)
+        acct_label = ', '.join(f"{account_label(conn, a[0])} [{a[0]}]" for a in accounts) if accounts else ''
+    conn.close()
+
+    meta = {'account_label': acct_label, 'include_defaults': include_defaults}
+
+    if output_file and fmt == 'table':
+        if output_file.endswith('.html') or output_file.endswith('.htm'):
+            fmt = 'html'
+        elif output_file.endswith('.json'):
+            fmt = 'json'
+
+    if fmt == 'table':
+        out = format_tags_table(result, meta, summary_only=summary,
+                                untagged_only=untagged_only,
+                                noncompliant_only=noncompliant_only)
+    elif fmt == 'json':
+        out = format_tags_json(result, meta, untagged_only=untagged_only,
+                               noncompliant_only=noncompliant_only)
+    else:
+        out = format_tags_html(result, meta, untagged_only=untagged_only,
+                               noncompliant_only=noncompliant_only)
+        if not output_file:
+            output_file = 'tag-compliance.html'
+
+    if output_file:
+        with open(output_file, 'w') as f:
+            f.write(out)
+        click.echo(f"Tag compliance report saved to: {output_file}")
+    else:
+        click.echo(out)
+
+
+@main.command()
+@click.option('--account', '-a', default=None, shell_complete=complete_accounts,
+              help='Scope to an account (name, alias, or ID)')
+@click.option('--type', '-t', 'rule_types', multiple=True, shell_complete=complete_waste_rules,
+              help='Run only specific rule key(s)')
+@click.option('--min-age-days', default=90, type=click.IntRange(min=1),
+              help='Age threshold for old-snapshot / old-ami (default: 90)')
+@click.option('--include-defaults', is_flag=True, help='Include default AWS resources')
+@click.option('--format', '-f', 'fmt', type=click.Choice(['table', 'json', 'html']),
+              default='table', help='Output format')
+@click.option('--output', '-o', 'output_file', default=None, help='Output file path')
+@click.option('--summary', is_flag=True, help='Counts per rule only, no resource listing')
+@click.option('--db', default=None, help='Database path (default: ~/.awsmap/inventory.db)')
+def waste(account, rule_types, min_age_days, include_defaults, fmt, output_file, summary, db):
+    """Find potentially idle or wasteful resources.
+
+    \b
+    Examples:
+      awsmap waste
+      awsmap waste -a prod --summary
+      awsmap waste -t unattached-ebs -t available-eni
+      awsmap waste --min-age-days 180
+      awsmap waste -f html -o waste.html
+    """
+    if db is None:
+        db = get_config('db')
+
+    rule_keys = None
+    if rule_types:
+        rule_keys = []
+        for t in rule_types:
+            rule_keys.extend([x.strip() for x in t.split(',') if x.strip()])
+        unknown = [k for k in rule_keys if k not in RULE_KEYS]
+        if unknown:
+            click.echo(f"Error: unknown rule(s): {', '.join(unknown)}. "
+                       f"Valid: {', '.join(RULE_KEYS)}", err=True)
+            sys.exit(1)
+
+    try:
+        conn = get_connection(db)
+    except Exception as e:
+        click.echo(f"Error opening database: {e}", err=True)
+        sys.exit(1)
+
+    account_id = None
+    if account:
+        account_id = resolve_account_id(conn, account)
+        if not account_id:
+            accounts = get_accounts(conn)
+            click.echo(f"Error: '{account}' not found. Available accounts:", err=True)
+            for acct_id, alias, prof in accounts:
+                click.echo(f"  {alias or prof or acct_id} [{acct_id}]", err=True)
+            conn.close()
+            sys.exit(1)
+
+    result = find_waste(conn, account_id=account_id, rule_keys=rule_keys,
+                        min_age_days=min_age_days, include_defaults=include_defaults)
+
+    if account_id:
+        acct_label = f"{account_label(conn, account_id)} [{account_id}]"
+    else:
+        accounts = get_accounts(conn)
+        acct_label = ', '.join(f"{account_label(conn, a[0])} [{a[0]}]" for a in accounts) if accounts else ''
+    conn.close()
+
+    meta = {'account_label': acct_label, 'include_defaults': include_defaults}
+
+    if output_file and fmt == 'table':
+        if output_file.endswith('.html') or output_file.endswith('.htm'):
+            fmt = 'html'
+        elif output_file.endswith('.json'):
+            fmt = 'json'
+
+    if fmt == 'table':
+        out = format_waste_table(result, meta, summary_only=summary)
+    elif fmt == 'json':
+        out = format_waste_json(result, meta)
+    else:
+        out = format_waste_html(result, meta)
+        if not output_file:
+            output_file = 'waste.html'
+
+    if output_file:
+        with open(output_file, 'w') as f:
+            f.write(out)
+        click.echo(f"Waste report saved to: {output_file}")
+    else:
+        click.echo(out)
 
 
 @main.group(invoke_without_command=True)
@@ -943,7 +1231,7 @@ def demo(db, accounts, scans, seed, force):
     """Generate a demo database with synthetic AWS inventory data.
 
     Creates a realistic database covering all 150+ services, multiple accounts,
-    and multiple scans — so you can try query, ask, examples, and diff without
+    and multiple scans - so you can try query, ask, examples, and diff without
     needing an AWS account.
 
     \b
