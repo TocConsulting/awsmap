@@ -1,5 +1,5 @@
 """
-Output formatters for drift detection results — table, JSON, HTML.
+Output formatters for drift detection results - table, JSON, HTML.
 """
 
 import json

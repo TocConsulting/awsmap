@@ -292,7 +292,7 @@ def test_reconstruct_with_service_filter(tmp_path):
 
 def test_reconstruct_scanned_but_empty_service_is_empty(tmp_path):
     """A later scan that covered a service but found nothing represents it as
-    empty — the resource from an earlier scan must NOT linger in the snapshot."""
+    empty - the resource from an earlier scan must NOT linger in the snapshot."""
     conn = _create_test_db(tmp_path)
     # Jan 10: ec2 scanned, has one instance.
     _insert_scan(conn, 'scan1', '111111111111', '2026-01-10 10:00:00 UTC', 1,
@@ -310,7 +310,7 @@ def test_reconstruct_scanned_but_empty_service_is_empty(tmp_path):
 
 def test_reconstruct_legacy_scan_without_coverage_falls_back(tmp_path):
     """Scans written before the scanned_services column (NULL) fall back to the
-    services present in their resources — preserving the prior behavior."""
+    services present in their resources - preserving the prior behavior."""
     conn = _create_test_db(tmp_path)
     # Legacy scan: scanned_services NULL.
     _insert_scan(conn, 'scan1', '111111111111', '2026-01-10 10:00:00 UTC', 1)
@@ -730,4 +730,101 @@ def test_full_diff_summary_mode(tmp_path):
     assert 'ec2' in output
     # Should NOT have detailed resource rows
     assert 'ADDED (' not in output
+    conn.close()
+
+
+# ─── default-diff (bare `awsmap diff`) tests ───
+
+from aws_inventory.db import get_recent_scan_timestamps, get_scan_timestamp_before
+
+
+def test_normalize_timestamp_utc_suffix_roundtrip():
+    # Stored timestamps end in ' UTC' and must round-trip, not get mangled
+    # by the T->space separator conversion (the 'UTC' -> 'U C' regression).
+    assert normalize_timestamp('2026-06-09 18:00:00 UTC') == '2026-06-09 18:00:00 UTC'
+
+
+def test_normalize_timestamp_t_separator_gets_utc():
+    assert normalize_timestamp('2026-01-15T14:30:00') == '2026-01-15 14:30:00 UTC'
+
+
+def test_recent_scan_timestamps_two_scans(tmp_path):
+    conn = _create_test_db(tmp_path)
+    _insert_scan(conn, 's1', '111111111111', '2026-01-10 10:00:00 UTC')
+    _insert_scan(conn, 's2', '111111111111', '2026-02-05 10:00:00 UTC')
+    conn.commit()
+    latest, prev = get_recent_scan_timestamps(conn)
+    assert latest == '2026-02-05 10:00:00 UTC'
+    assert prev == '2026-01-10 10:00:00 UTC'
+    conn.close()
+
+
+def test_recent_scan_timestamps_single_scan(tmp_path):
+    conn = _create_test_db(tmp_path)
+    _insert_scan(conn, 's1', '111111111111', '2026-01-10 10:00:00 UTC')
+    conn.commit()
+    latest, prev = get_recent_scan_timestamps(conn)
+    assert latest == '2026-01-10 10:00:00 UTC'
+    assert prev is None
+    conn.close()
+
+
+def test_recent_scan_timestamps_no_scans(tmp_path):
+    conn = _create_test_db(tmp_path)
+    assert get_recent_scan_timestamps(conn) == (None, None)
+    conn.close()
+
+
+def test_recent_scan_timestamps_account_scoped(tmp_path):
+    conn = _create_test_db(tmp_path)
+    _insert_scan(conn, 's1', '111111111111', '2026-01-10 10:00:00 UTC')
+    _insert_scan(conn, 's2', '111111111111', '2026-02-05 10:00:00 UTC')
+    _insert_scan(conn, 's3', '222222222222', '2026-03-01 10:00:00 UTC')
+    conn.commit()
+    latest, prev = get_recent_scan_timestamps(conn, account_id='111111111111')
+    assert latest == '2026-02-05 10:00:00 UTC'
+    assert prev == '2026-01-10 10:00:00 UTC'
+    conn.close()
+
+
+def test_scan_timestamp_before(tmp_path):
+    conn = _create_test_db(tmp_path)
+    _insert_scan(conn, 's1', '111111111111', '2026-01-10 10:00:00 UTC')
+    _insert_scan(conn, 's2', '111111111111', '2026-02-05 10:00:00 UTC')
+    conn.commit()
+    assert get_scan_timestamp_before(conn, '2026-02-05 10:00:00 UTC') == '2026-01-10 10:00:00 UTC'
+    assert get_scan_timestamp_before(conn, '2026-01-10 10:00:00 UTC') is None
+    conn.close()
+
+
+def test_default_diff_ignores_untouched_services_on_partial_rescan(tmp_path):
+    # Scan A: full (ec2 + s3). Scan B: ec2 only, with one ec2 change.
+    # Bare-diff defaulting reconstructs the previous state at A's timestamp and
+    # compares against current. s3 (untouched by B) must NOT appear as removed.
+    conn = _create_test_db(tmp_path)
+
+    _insert_scan(conn, 'A', '111111111111', '2026-01-10 10:00:00 UTC',
+                 scanned_services=['ec2', 's3'])
+    _insert_resource(conn, 'A', 'ec2', 'instance', 'i-aaa', 'web-1', is_current=0)
+    _insert_resource(conn, 'A', 's3', 'bucket', 'data-bucket', 'data-bucket', is_current=1)
+
+    _insert_scan(conn, 'B', '111111111111', '2026-02-05 10:00:00 UTC',
+                 scanned_services=['ec2'])
+    _insert_resource(conn, 'B', 'ec2', 'instance', 'i-bbb', 'web-2', is_current=1)
+    conn.commit()
+
+    latest, prev_cutoff = get_recent_scan_timestamps(conn)
+    assert latest == '2026-02-05 10:00:00 UTC'
+    assert prev_cutoff == '2026-01-10 10:00:00 UTC'
+
+    from_snap = reconstruct_snapshot(conn, prev_cutoff)
+    to_snap = reconstruct_current_snapshot(conn)
+    diff_result = compute_diff(from_snap, to_snap)
+
+    services_removed = {r['service'] for r in diff_result['removed']}
+    services_added = {r['service'] for r in diff_result['added']}
+    # Only ec2 churned; s3 stayed put across the partial rescan.
+    assert services_removed == {'ec2'}
+    assert services_added == {'ec2'}
+    assert all(r['service'] != 's3' for r in diff_result['removed'])
     conn.close()

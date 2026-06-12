@@ -76,12 +76,12 @@ def load_named_query(name):
     return raw_sql, meta
 
 
-def prepare_query(raw_sql, meta, account_id=None, params=None):
+def prepare_query(raw_sql, meta, account_id=None, params=None, scan_id=None):
     """Prepare a query for execution by injecting scan filter and params."""
     params = params or {}
 
     # Build scan filter
-    scan_filter = _scan_where(account_id)
+    scan_filter = _scan_where(account_id, scan_id)
 
     # Replace scan filter placeholders (supports aliased versions)
     raw_sql = raw_sql.replace("{scan_filter}", scan_filter)

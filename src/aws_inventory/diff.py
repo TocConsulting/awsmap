@@ -32,16 +32,17 @@ def normalize_timestamp(date_str: str) -> str:
         return datetime.now(timezone.utc).strftime('%Y-%m-%d') + ' 23:59:59 UTC'
     # Full datetime
     if 'T' in date_str or ' ' in date_str:
-        ts = date_str.replace('T', ' ')
-        if not ts.endswith('UTC'):
-            ts += ' UTC'
+        core = date_str
+        if core.endswith('UTC'):
+            core = core[:-3].strip()
+        core = core.replace('T', ' ').strip()
         # Validate by parsing
         try:
-            datetime.strptime(ts.replace(' UTC', ''), '%Y-%m-%d %H:%M:%S')
+            datetime.strptime(core, '%Y-%m-%d %H:%M:%S')
         except ValueError:
             raise ValueError(f"Invalid date format: '{date_str}'. "
                              f"Use YYYY-MM-DD, YYYY-MM-DDTHH:MM:SS, 7d, 30d, yesterday, or today.")
-        return ts
+        return f"{core} UTC"
     # Date only -> validate and convert to end of day
     try:
         datetime.strptime(date_str, '%Y-%m-%d')
@@ -62,7 +63,7 @@ def reconstruct_snapshot(conn, cutoff_ts: str,
 
     Coverage is read from each scan's recorded ``scanned_services`` list, so a
     service that was scanned but returned zero resources is correctly represented
-    as empty — it will show as removed relative to an earlier non-empty scan,
+    as empty - it will show as removed relative to an earlier non-empty scan,
     instead of falling back to that stale earlier scan. Scans written before this
     column existed (``scanned_services`` is NULL) fall back to the set of services
     actually present in their resources, preserving the previous behavior.

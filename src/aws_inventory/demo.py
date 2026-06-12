@@ -2,7 +2,7 @@
 Demo database generator for awsmap.
 
 Creates a realistic synthetic AWS inventory database covering all 150+ services,
-multiple accounts, and multiple scans with drift — so users can try awsmap query,
+multiple accounts, and multiple scans with drift - so users can try awsmap query,
 ask, examples, and diff features without needing an AWS account.
 """
 
@@ -129,7 +129,7 @@ def _arn(service, region, account_id, rtype, rid):
 
 
 # ---------------------------------------------------------------------------
-# Cross-reference pool — tracks generated IDs for inter-resource references
+# Cross-reference pool - tracks generated IDs for inter-resource references
 # ---------------------------------------------------------------------------
 
 class RefPool:
@@ -155,7 +155,7 @@ class RefPool:
 
 
 # ---------------------------------------------------------------------------
-# Tier 1 — High-fidelity generators for critical services
+# Tier 1 - High-fidelity generators for critical services
 # ---------------------------------------------------------------------------
 
 def _gen_vpc(account_id, pool):
@@ -185,7 +185,7 @@ def _gen_vpc(account_id, pool):
             "tags": _tags(name) if not is_default else {"Name": "default"},
         })
 
-        # Subnets — 2-4 per VPC
+        # Subnets - 2-4 per VPC
         azs = [f"{region}a", f"{region}b", f"{region}c"]
         for j in range(random.randint(2, 4)):
             subnet_id = f"subnet-{_hex(17)}"
@@ -268,7 +268,7 @@ def _gen_vpc(account_id, pool):
             "tags": {},
         })
 
-    # VPC endpoints — a few per account
+    # VPC endpoints - a few per account
     for _ in range(random.randint(2, 5)):
         vpce_id = f"vpce-{_hex(17)}"
         vpc_info = random.choice(pool._vpcs[account_id])
@@ -296,7 +296,7 @@ def _gen_ec2(account_id, pool, count_range=(15, 35)):
     if not vpcs:
         return resources
 
-    # Security groups — including some open ones for the query
+    # Security groups - including some open ones for the query
     sg_count = random.randint(10, 20)
     for i in range(sg_count):
         sg_id = f"sg-{_hex(17)}"
@@ -307,7 +307,7 @@ def _gen_ec2(account_id, pool, count_range=(15, 35)):
         is_default = (i == 0 and vpc_info[1] == "172.31.0.0/16")
         sg_name = "default" if is_default else _name("sg", i)
 
-        # Build inbound_rules string — some open to 0.0.0.0/0 for the query
+        # Build inbound_rules string - some open to 0.0.0.0/0 for the query
         if random.random() < 0.2:
             inbound_str = f"tcp/22 from 0.0.0.0/0, tcp/443 from 0.0.0.0/0"
         elif random.random() < 0.3:
@@ -361,7 +361,7 @@ def _gen_ec2(account_id, pool, count_range=(15, 35)):
             "tags": _tags(name),
         })
 
-    # EBS volumes — some attached, some available (for unused-volumes query)
+    # EBS volumes - some attached, some available (for unused-volumes query)
     instances = pool.get_all(account_id, "ec2", "instance")
     vol_types = ["gp3", "gp2", "io1", "io2", "st1", "sc1"]
     n_volumes = random.randint(25, 50)
@@ -448,7 +448,7 @@ def _gen_ec2(account_id, pool, count_range=(15, 35)):
             "tags": _tags(kp_name),
         })
 
-    # Elastic IPs — some unassociated for unused-eips query
+    # Elastic IPs - some unassociated for unused-eips query
     for i in range(random.randint(4, 8)):
         eip_id = f"eipalloc-{_hex(17)}"
         region = random.choice(REGIONS[:3])
@@ -524,7 +524,7 @@ def _gen_s3(account_id, pool):
 
 
 def _gen_iam(account_id, pool):
-    """Generate IAM resources — users, roles, policies, groups."""
+    """Generate IAM resources - users, roles, policies, groups."""
     resources = []
 
     # IAM groups
@@ -556,7 +556,7 @@ def _gen_iam(account_id, pool):
         pool.add(account_id, "iam", "user", uname)
         # Admin users for admin-users query
         is_admin = uname in ("alice", "bob")
-        # MFA disabled for some — users-without-mfa query
+        # MFA disabled for some - users-without-mfa query
         has_mfa = random.random() > 0.3 or uname in ("alice", "bob")
         if uname == "old-intern":
             has_mfa = False
@@ -851,7 +851,7 @@ def _gen_rds(account_id, pool):
 
 
 def _gen_secretsmanager(account_id, pool):
-    """Generate Secrets Manager secrets — some without rotation for the query."""
+    """Generate Secrets Manager secrets - some without rotation for the query."""
     resources = []
     names = ["db/production/master", "db/staging/master", "api/stripe-key",
              "api/sendgrid-key", "deploy/github-token", "app/jwt-secret",
@@ -952,7 +952,7 @@ def _gen_elbv2(account_id, pool):
 
 
 # ---------------------------------------------------------------------------
-# Tier 2 — Structured templates for services with examples but no queries
+# Tier 2 - Structured templates for services with examples but no queries
 # ---------------------------------------------------------------------------
 
 # Map of (service, type) -> details template
@@ -1166,7 +1166,7 @@ TIER2_TEMPLATES = {
 
 
 # ---------------------------------------------------------------------------
-# ID pattern generators per (service, type) — for realistic resource IDs
+# ID pattern generators per (service, type) - for realistic resource IDs
 # ---------------------------------------------------------------------------
 
 # Default: UUID-based
@@ -1269,7 +1269,7 @@ def _gen_tier2_resources(account_id, pool):
             region = None if is_global else random.choice(REGIONS[:4])
             name = f"{rtype}-{_hex(4)}"
 
-            # Process details template — replace placeholders
+            # Process details template - replace placeholders
             details = {}
             for k, v in details_template.items():
                 if isinstance(v, str) and "{account_id}" in v:
@@ -1418,7 +1418,7 @@ def _mutate_resource(r):
 
 
 # ---------------------------------------------------------------------------
-# Main generator — orchestrates everything
+# Main generator - orchestrates everything
 # ---------------------------------------------------------------------------
 
 def generate_demo_db(db_path, n_accounts=3, n_scans=3, seed=42, progress=None):
@@ -1475,7 +1475,7 @@ def generate_demo_db(db_path, n_accounts=3, n_scans=3, seed=42, progress=None):
         random.seed(seed + zlib.crc32(account_id.encode()))
         pool = RefPool()
 
-        # Tier 1 — critical services in dependency order
+        # Tier 1 - critical services in dependency order
         baseline = []
         baseline.extend(_gen_vpc(account_id, pool))
         baseline.extend(_gen_ec2(account_id, pool))
@@ -1487,13 +1487,13 @@ def generate_demo_db(db_path, n_accounts=3, n_scans=3, seed=42, progress=None):
         baseline.extend(_gen_kms(account_id, pool))
         baseline.extend(_gen_elbv2(account_id, pool))
 
-        # Tier 2 — template-based services
+        # Tier 2 - template-based services
         baseline.extend(_gen_tier2_resources(account_id, pool))
 
         # Track which (service, type) pairs are already generated
         generated_pairs = {(r["service"], r["type"]) for r in baseline}
 
-        # Tier 3 — auto-generated remaining services (fills gaps)
+        # Tier 3 - auto-generated remaining services (fills gaps)
         baseline.extend(_gen_tier3_resources(account_id, pool, generated_pairs))
 
         services_seen.update(r["service"] for r in baseline)

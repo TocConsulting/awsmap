@@ -133,6 +133,36 @@ def complete_example_services(ctx, param, incomplete):
         return []
 
 
+def complete_scan_selectors(ctx, param, incomplete):
+    """Complete scan selectors (latest/previous/first and recent scan ids)."""
+    try:
+        items = [CompletionItem(s) for s in ("latest", "previous", "first")
+                 if s.startswith(incomplete)]
+        from aws_inventory.config import get_config
+        from aws_inventory.db import get_connection, list_scans
+        conn = get_connection(get_config("db"))
+        for scan_id, timestamp, acct, alias, profile, count, _ in list_scans(conn)[:10]:
+            if scan_id.startswith(incomplete):
+                items.append(CompletionItem(scan_id, help=f"{timestamp} {alias or profile or acct}"))
+        conn.close()
+        return items
+    except Exception:
+        return []
+
+
+def complete_waste_rules(ctx, param, incomplete):
+    """Complete waste rule keys."""
+    try:
+        from aws_inventory.waste import RULES
+        return [
+            CompletionItem(r["key"], help=r["title"])
+            for r in RULES
+            if r["key"].startswith(incomplete)
+        ]
+    except Exception:
+        return []
+
+
 def complete_example_numbers(ctx, param, incomplete):
     """Complete question numbers with the question text as description."""
     try:

@@ -9,10 +9,10 @@ import difflib
 import json
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # ---------------------------------------------------------------------------
-# 1. Service/Type taxonomy — DATA for fuzzy name matching only
+# 1. Service/Type taxonomy - DATA for fuzzy name matching only
 # ---------------------------------------------------------------------------
 
 _AWSMAP_TYPES = {
@@ -218,7 +218,7 @@ def _add_filter(intent, filt):
 # ---------------------------------------------------------------------------
 
 _SYNONYMS = [
-    # (phrase, service, type)  — sorted by phrase length DESC for multi-word-first matching
+    # (phrase, service, type)  - sorted by phrase length DESC for multi-word-first matching
     ("load balancers", "elbv2", "application-load-balancer"),
     ("load balancer", "elbv2", "application-load-balancer"),
     ("key pairs", "ec2", "key-pair"),
@@ -258,7 +258,7 @@ _SYNONYMS = [
 # (service_context, keyword_re, detail_field, value_prefix)
 # service_context=None means matches any service
 _USING_MAP = [
-    # Lambda runtimes — already handled by existing runtime extraction,
+    # Lambda runtimes - already handled by existing runtime extraction,
     # so we only add RDS / ElastiCache engine mappings here.
     ("rds",         r"\baurora\b",     "$.engine", "aurora"),
     ("rds",         r"\bmysql\b",      "$.engine", "mysql"),
@@ -428,13 +428,24 @@ def _normalize_type(rtype, service):
 _LATEST_SCAN = "is_current=1"
 
 
-def _scan_where(account_id=None):
-    """Build the current-resources filter, optionally scoped to one account."""
+def _scan_where(account_id=None, scan_id=None):
+    """Build the resource-scope filter.
+
+    Defaults to the current snapshot (is_current=1). When scan_id is given,
+    scopes to that scan instead. Optionally narrowed to one account.
+    """
+    parts = []
+    if scan_id:
+        # Sanitize: stored scan ids are hex.
+        safe_scan = ''.join(c for c in scan_id if c.isalnum())
+        parts.append(f"scan_id='{safe_scan}'")
+    else:
+        parts.append(_LATEST_SCAN)
     if account_id:
         # Sanitize account_id: must be alphanumeric/dash/underscore only
         safe_id = ''.join(c for c in account_id if c.isalnum() or c in '-_')
-        return f"is_current=1 AND account_id='{safe_id}'"
-    return _LATEST_SCAN
+        parts.append(f"account_id='{safe_id}'")
+    return " AND ".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -442,7 +453,7 @@ def _scan_where(account_id=None):
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# 9. _validate_intent — minimal validation and normalization
+# 9. _validate_intent - minimal validation and normalization
 # ---------------------------------------------------------------------------
 
 _CORE_COLUMNS = frozenset({"account_id", "region", "name", "service", "type", "is_default", "id", "tags"})
@@ -807,14 +818,14 @@ def _build_filter_clause(f):
         return f"{sql_field}={_sql_value(value)}"
 
 
-def build_sql(intent, account_id=None):
+def build_sql(intent, account_id=None, scan_id=None):
     """
     Build a SQL query from a validated intent dict.
 
     Supports generic relationship expansion for inheritable fields via
     _RESOURCE_RELATIONSHIPS metadata. Currently used for IAM user/group relationships.
     """
-    scan = _scan_where(account_id)
+    scan = _scan_where(account_id, scan_id)
 
     where_clauses = []
 
@@ -1136,7 +1147,7 @@ def build_sql(intent, account_id=None):
 
 
 # ---------------------------------------------------------------------------
-# 11. Built-in NL parser — zero-dependency, works without any LLM
+# 11. Built-in NL parser - zero-dependency, works without any LLM
 # ---------------------------------------------------------------------------
 
 # AWS region regex (covers all current regions including gov/cn/ap/me/af/il)
@@ -1873,9 +1884,12 @@ def _extract_semantic_filters(q: str, qw: set, intent: dict) -> None:
 
     # Context-aware "unused" / "unattached" filters
     if "unused" in q or "unattached" in q:
-        if ("elastic" in qw and "ip" in qw) or "eip" in qw:
-            # Elastic IPs: unused = no association
-            intent["filters"].append({"field": "$.association_id", "op": "is_null"})
+        is_eip = ((intent.get("service") == "ec2" and intent.get("type") == "elastic-ip")
+                  or ("elastic" in qw and ("ip" in qw or "ips" in qw)) or "eip" in qw)
+        if is_eip:
+            # Elastic IPs: unused = not attached to an instance or network interface
+            intent["filters"].append({"field": "$.instance_id", "op": "is_null"})
+            intent["filters"].append({"field": "$.network_interface_id", "op": "is_null"})
         elif "ebs" in qw or ("volume" in qw and "elastic" not in qw):
             # EBS volumes: unattached = state='available'
             intent["filters"].append({"field": "$.state", "op": "eq", "value": "available"})
@@ -2055,7 +2069,7 @@ def _extract_using_patterns(q: str, qw: set, intent: dict) -> None:
 
 def _extract_relative_time_filters(q: str, qw: set, intent: dict) -> None:
     """Extract relative time filters: 'created in the last N days', 'older than N days', etc."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # "created/modified in the last N days/weeks/months"
     last_m = re.search(r'\b(created|modified)\s+in\s+the\s+last\s+(\d+)\s+(day|week|month|hour)s?', q)
@@ -2887,7 +2901,7 @@ def _builtin_parse(question: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 12. generate_sql — public API
+# 12. generate_sql - public API
 # ---------------------------------------------------------------------------
 
 last_debug: list[str] = []
@@ -2960,13 +2974,14 @@ def _fix_partial_value_match(sql, conn, *, enable_fuzzy_fallback=True):
     return sql
 
 
-def generate_sql(question, conn=None, account_id=None):
+def generate_sql(question, conn=None, account_id=None, scan_id=None):
     """Convert a natural language question to SQL.
 
     Args:
         question: The natural language question
         conn: Optional SQLite connection for schema context and validation
         account_id: Optional account ID to scope queries
+        scan_id: Optional scan ID to scope to a specific scan instead of current
 
     Returns:
         SQL query string
@@ -2982,7 +2997,7 @@ def generate_sql(question, conn=None, account_id=None):
     _validate_intent(intent, conn, account_id, question)
 
     # Build SQL
-    sql = build_sql(intent, account_id)
+    sql = build_sql(intent, account_id, scan_id)
 
     if debug:
         last_debug.extend([

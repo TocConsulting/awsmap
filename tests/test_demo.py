@@ -1,4 +1,4 @@
-"""Tests for the demo data generator — focused on --seed reproducibility."""
+"""Tests for the demo data generator - focused on --seed reproducibility."""
 
 import os
 import sqlite3

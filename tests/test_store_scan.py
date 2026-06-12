@@ -62,7 +62,7 @@ def test_scanned_service_with_zero_results_retires_old_rows(tmp_path):
     acct = "111122223333"
     r = [{"service": "sqs", "type": "queue", "id": "q1", "region": "us-east-1"}]
     store_scan(conn, _scan(acct, "2026-01-01 00:00:00 UTC", r), scanned_services=["sqs"])
-    # Re-scan found no queues (deleted) — pass scanned_services so the empty
+    # Re-scan found no queues (deleted) - pass scanned_services so the empty
     # service is still retired.
     store_scan(conn, _scan(acct, "2026-01-02 00:00:00 UTC", []), scanned_services=["sqs"])
     assert _current_rows(conn, acct, "sqs") == 0

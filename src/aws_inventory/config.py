@@ -17,6 +17,7 @@ _VALID_KEYS = {
     "exclude_defaults": ("true", "false"),
     "db":               None,
     "query_format":     ("table", "json", "csv"),
+    "required_tags":    None,
 }
 
 
