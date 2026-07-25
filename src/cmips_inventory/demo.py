@@ -1,8 +1,8 @@
 """
-Demo database generator for awsmap.
+Demo database generator for cmipsmap.
 
 Creates a realistic synthetic AWS inventory database covering all 150+ services,
-multiple accounts, and multiple scans with drift - so users can try awsmap query,
+multiple accounts, and multiple scans with drift - so users can try cmipsmap query,
 ask, examples, and diff features without needing an AWS account.
 """
 
@@ -13,8 +13,8 @@ import uuid
 import zlib
 from datetime import datetime, timedelta, timezone
 
-from aws_inventory.db import get_connection, store_scan
-from aws_inventory.nlq import _AWSMAP_TYPES
+from cmips_inventory.db import get_connection, store_scan
+from cmips_inventory.nlq import _CMIPSMAP_TYPES
 
 
 # ---------------------------------------------------------------------------
@@ -1304,7 +1304,7 @@ def _gen_tier3_resources(account_id, pool, generated_pairs=None):
                        "cloudfront", "shield", "budgets", "ce", "health",
                        "networkmanager", "globalaccelerator"}
 
-    for svc, types in _AWSMAP_TYPES.items():
+    for svc, types in _CMIPSMAP_TYPES.items():
         for rtype in types:
             if (svc, rtype) in generated_pairs:
                 continue

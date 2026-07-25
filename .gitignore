@@ -108,7 +108,7 @@ Thumbs.db
 *_inventory_*.html
 
 # Local configuration
-.aws-inventory/
+.cmips-inventory/
 
 # Secrets and credentials (never commit these!)
 *.pem

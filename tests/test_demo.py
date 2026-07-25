@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from aws_inventory.demo import generate_demo_db
+from cmips_inventory.demo import generate_demo_db
 
 
 def _resource_rows(db_path):
@@ -57,7 +57,7 @@ def test_different_seed_differs(tmp_path):
 
 def test_services_covered_stat_matches_db(tmp_path):
     """The reported services_covered count equals the distinct services
-    actually stored (regression for the old len(_AWSMAP_TYPES) stat)."""
+    actually stored (regression for the old len(_CMIPSMAP_TYPES) stat)."""
     db = str(tmp_path / "demo.db")
     stats = generate_demo_db(db, n_accounts=1, n_scans=1, seed=42)
 

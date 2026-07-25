@@ -9,7 +9,7 @@ counts) are intentionally absent.
 
 from datetime import datetime, timedelta, timezone
 
-from aws_inventory.nlq import _scan_where
+from cmips_inventory.nlq import _scan_where
 
 
 # key, title, service, type, where (SQL over details), display (detail keys to

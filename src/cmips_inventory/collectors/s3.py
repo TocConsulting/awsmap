@@ -5,7 +5,7 @@ S3 resource collector.
 import boto3
 from typing import List, Dict, Any, Optional
 
-from aws_inventory.auth import get_enabled_regions
+from cmips_inventory.auth import get_enabled_regions
 
 
 def collect_s3_resources(session: boto3.Session, region: Optional[str], account_id: str, filter_regions: Optional[List[str]] = None) -> List[Dict[str, Any]]:

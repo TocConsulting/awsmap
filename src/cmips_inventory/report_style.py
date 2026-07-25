@@ -1,5 +1,5 @@
 """
-Shared HTML styling for awsmap report commands (waste, tags).
+Shared HTML styling for cmipsmap report commands (waste, tags).
 
 Keeps a single stylesheet and theme/filter script so the report commands share
 one consistent look with light and dark modes.
@@ -123,9 +123,9 @@ def theme_script():
     return """
         function toggleTheme() {
             document.body.classList.toggle('dark');
-            localStorage.setItem('awsmap-dark', document.body.classList.contains('dark'));
+            localStorage.setItem('cmipsmap-dark', document.body.classList.contains('dark'));
         }
-        if (localStorage.getItem('awsmap-dark') === 'true') {
+        if (localStorage.getItem('cmipsmap-dark') === 'true') {
             document.body.classList.add('dark');
         }
 """

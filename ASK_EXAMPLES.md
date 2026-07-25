@@ -1,6 +1,6 @@
-# awsmap ask - Example Queries
+# cmipsmap ask - Example Queries
 
-This file contains all 1489 test queries for the awsmap NLQ engine.
+This file contains all 1489 test queries for the cmipsmap NLQ engine.
 
 **Total: 1489 unique queries**
 
@@ -1506,5 +1506,5 @@ which VPCs are default
 
 **Notes:**
 - All queries tested against real AWS inventory database
-- Covers all major AWS services collected by awsmap
+- Covers all major AWS services collected by cmipsmap
 - Includes: listing, counting, filtering, detail queries, multi-region

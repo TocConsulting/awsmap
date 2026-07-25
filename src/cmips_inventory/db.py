@@ -9,7 +9,7 @@ import sqlite3
 import uuid
 
 
-DEFAULT_DB_PATH = os.path.expanduser("~/.awsmap/inventory.db")
+DEFAULT_DB_PATH = os.path.expanduser("~/.cmipsmap/inventory.db")
 
 # A few collectors are invoked under one service label but emit resources with a
 # different `service` value. Normalize the scan label to the emitted name so the

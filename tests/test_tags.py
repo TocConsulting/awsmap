@@ -7,8 +7,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from aws_inventory.db import SCHEMA_SQL
-from aws_inventory.tags_audit import audit_tags
+from cmips_inventory.db import SCHEMA_SQL
+from cmips_inventory.tags_audit import audit_tags
 
 
 def _db():

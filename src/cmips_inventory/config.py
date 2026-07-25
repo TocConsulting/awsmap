@@ -1,11 +1,11 @@
 """
-User configuration for awsmap (~/.awsmap/config).
+User configuration for cmipsmap (~/.cmipsmap/config).
 """
 
 import os
 
 
-CONFIG_PATH = os.path.expanduser("~/.awsmap/config")
+CONFIG_PATH = os.path.expanduser("~/.cmipsmap/config")
 
 # Valid keys and their allowed values (None = any string)
 _VALID_KEYS = {

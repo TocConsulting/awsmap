@@ -1,23 +1,21 @@
 <p align="center">
-  <img src="assets/logo.png" alt="awsmap" width="160" style="height: auto;">
+  <img src="assets/logo.png" alt="cmipsmap" width="160" style="height: auto;">
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/awsmap/"><img src="https://img.shields.io/pypi/v/awsmap.svg" alt="PyPI version"></a>
-  <a href="https://pepy.tech/project/awsmap"><img src="https://static.pepy.tech/badge/awsmap" alt="Downloads"></a>
-  <a href="https://hub.docker.com/r/tarekcheikh/awsmap"><img src="https://img.shields.io/docker/v/tarekcheikh/awsmap?label=docker" alt="Docker"></a>
-  <a href="https://hub.docker.com/r/tarekcheikh/awsmap"><img src="https://img.shields.io/docker/pulls/tarekcheikh/awsmap" alt="Docker Pulls"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-brightgreen.svg" alt="License: MIT"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="Python 3.9+"></a>
   <a href="https://aws.amazon.com/"><img src="https://img.shields.io/badge/AWS-150%2B_Services-orange.svg" alt="AWS Services"></a>
 </p>
 
-# awsmap
+# cmipsmap
 
-A fast, comprehensive tool for mapping and inventorying AWS resources across 150+ services and all regions.
+A fast, comprehensive tool for mapping and inventorying the CMIPS AWS estate across 150+ services and all regions.
+
+**Author:** Kiran Rajanna
 
 <p align="center">
-  <img src="assets/demo.gif" alt="awsmap demo: scan, SQL query, security queries, and natural-language ask" width="100%">
+  <img src="assets/demo.gif" alt="cmipsmap demo: scan, SQL query, security queries, and natural-language ask" width="100%">
 </p>
 
 ## Features
@@ -25,50 +23,48 @@ A fast, comprehensive tool for mapping and inventorying AWS resources across 150
 - **150+ AWS Services**: Covers compute, storage, database, networking, security, and more
 - **Multi-Region**: Parallel scanning across all enabled regions
 - **Local Database**: Every scan auto-stored in SQLite - query your inventory offline
-- **SQL Query Engine**: Run SQL against your inventory history (`awsmap query "SELECT ..."`)
-- **Pre-Built Query Library**: 30 ready-to-use security and compliance queries (`awsmap query -n admin-users`)
-- **Natural Language Queries**: Ask questions in plain English - zero dependencies, works out of the box (`awsmap ask show me all EC2 without Owner tag`)
-- **Examples Library**: 1381 ready-to-run questions organized by service (`awsmap examples lambda`)
+- **SQL Query Engine**: Run SQL against your inventory history (`cmipsmap query "SELECT ..."`)
+- **Pre-Built Query Library**: 30 ready-to-use security and compliance queries (`cmipsmap query -n admin-users`)
+- **Natural Language Queries**: Ask questions in plain English - zero dependencies, works out of the box (`cmipsmap ask show me all EC2 without Owner tag`)
+- **Examples Library**: 1381 ready-to-run questions organized by service (`cmipsmap examples lambda`)
 - **Multi-Account**: Scan multiple accounts, query across all of them
 - **Tag Filtering**: Filter by tags - multiple values for same tag match ANY (Owner=John OR Jane), different tags match ALL (Owner=John AND Environment=Production)
 - **Beautiful HTML Reports**: Interactive reports with search, filters, dark mode, and export
 - **Multiple Outputs**: JSON, CSV, and HTML formats
 - **Fast**: Parallel execution with 40 workers (~2 minutes for typical accounts)
-- **Drift Detection**: Compare snapshots over time - detect added, removed, and modified resources (`awsmap diff`)
-- **Waste Detection**: Find idle or wasteful resources from collected data, no extra API calls (`awsmap waste`)
-- **Tag Compliance**: Audit tagging coverage and score against required tags (`awsmap tags`)
-- **Scan-Scoped Queries**: Query any point in your scan history, not just the current state (`awsmap query --scan`, `awsmap ask --scan`)
+- **Drift Detection**: Compare snapshots over time - detect added, removed, and modified resources (`cmipsmap diff`)
+- **Waste Detection**: Find idle or wasteful resources from collected data, no extra API calls (`cmipsmap waste`)
+- **Tag Compliance**: Audit tagging coverage and score against required tags (`cmipsmap tags`)
+- **Scan-Scoped Queries**: Query any point in your scan history, not just the current state (`cmipsmap query --scan`, `cmipsmap ask --scan`)
 - **Console Login Support**: Works with `aws login` credential provider
 
 ## Installation
 
-### PyPI
+### From source
 
 ```bash
-pip install awsmap
+git clone https://github.com/kiranrajanna/cmipsmap.git
+cd cmipsmap
+pip install .
 ```
 
 **Requirements:** Python 3.9+, AWS credentials configured
 
 ### Docker
 
-```bash
-docker pull tarekcheikh/awsmap
-```
-
-Or build locally:
+Build locally:
 
 ```bash
-git clone https://github.com/TocConsulting/awsmap.git
-cd awsmap
-docker build -t awsmap .
+git clone https://github.com/kiranrajanna/cmipsmap.git
+cd cmipsmap
+docker build -t cmipsmap .
 ```
 
 ### Development Installation
 
 ```bash
-git clone https://github.com/TocConsulting/awsmap.git
-cd awsmap
+git clone https://github.com/kiranrajanna/cmipsmap.git
+cd cmipsmap
 pip install -e .
 ```
 
@@ -79,8 +75,8 @@ pip install -e .
 docker run --rm \
   -v ~/.aws:/root/.aws:ro \
   -v $(pwd)/output:/app/output \
-  -v ~/.awsmap:/root/.awsmap \
-  awsmap -p myprofile -o /app/output/inventory.html
+  -v ~/.cmipsmap:/root/.cmipsmap \
+  cmipsmap -p myprofile -o /app/output/inventory.html
 
 # Using environment variables
 docker run --rm \
@@ -88,47 +84,47 @@ docker run --rm \
   -e AWS_SECRET_ACCESS_KEY \
   -e AWS_DEFAULT_REGION=us-east-1 \
   -v $(pwd)/output:/app/output \
-  -v ~/.awsmap:/root/.awsmap \
-  awsmap -o /app/output/inventory.html
+  -v ~/.cmipsmap:/root/.cmipsmap \
+  cmipsmap -o /app/output/inventory.html
 
 # Query stored inventory
 docker run --rm \
-  -v ~/.awsmap:/root/.awsmap \
-  awsmap query "SELECT service, COUNT(*) as count FROM resources GROUP BY service ORDER BY count DESC"
+  -v ~/.cmipsmap:/root/.cmipsmap \
+  cmipsmap query "SELECT service, COUNT(*) as count FROM resources GROUP BY service ORDER BY count DESC"
 
 # List available services
-docker run --rm awsmap --list-services
+docker run --rm cmipsmap --list-services
 ```
 
 ## Usage
 
 ```bash
 # Full account inventory (all services, all regions, HTML output)
-awsmap -p myprofile
+cmipsmap -p myprofile
 
 # Specific services (comma-separated or multiple -s flags)
-awsmap -p myprofile -s ec2,s3,rds,lambda,iam
+cmipsmap -p myprofile -s ec2,s3,rds,lambda,iam
 
 # Specific regions
-awsmap -p myprofile -r us-east-1,eu-west-1
+cmipsmap -p myprofile -r us-east-1,eu-west-1
 
 # Filter by tags (OR logic for same key)
-awsmap -p myprofile -t Owner=John -t Owner=Jane -t Environment=Production
+cmipsmap -p myprofile -t Owner=John -t Owner=Jane -t Environment=Production
 
 # JSON output
-awsmap -p myprofile -f json -o inventory.json
+cmipsmap -p myprofile -f json -o inventory.json
 
 # List available collectors
-awsmap --list-services
+cmipsmap --list-services
 
 # Show timing per service (useful for debugging)
-awsmap -p myprofile --timings
+cmipsmap -p myprofile --timings
 
 # Exclude default AWS resources (default VPCs, security groups, etc.)
-awsmap -p myprofile --exclude-defaults
+cmipsmap -p myprofile --exclude-defaults
 
 # Skip local database storage
-awsmap -p myprofile --no-db
+cmipsmap -p myprofile --no-db
 ```
 
 ## Multi-Account
@@ -137,73 +133,73 @@ Scan multiple AWS accounts. Each scan is stored in the same local database - que
 
 ```bash
 # Scan different accounts (different profiles)
-awsmap -p production
-awsmap -p staging
-awsmap -p dev-account
+cmipsmap -p production
+cmipsmap -p staging
+cmipsmap -p dev-account
 
 # Query across all accounts
-awsmap query -n resources-by-account
-awsmap ask how many resources per account
+cmipsmap query -n resources-by-account
+cmipsmap ask how many resources per account
 
 # Scope to one account
-awsmap query -n admin-users -a production
-awsmap ask -a staging show me all Lambda functions
+cmipsmap query -n admin-users -a production
+cmipsmap ask -a staging show me all Lambda functions
 ```
 
 ## Query Your Inventory
 
-Every scan is automatically stored in a local SQLite database (`~/.awsmap/inventory.db`). Query it offline with raw SQL or natural language.
+Every scan is automatically stored in a local SQLite database (`~/.cmipsmap/inventory.db`). Query it offline with raw SQL or natural language.
 
 ### SQL Queries
 
 ```bash
 # Count resources per service
-awsmap query "SELECT service, COUNT(*) as count FROM resources GROUP BY service ORDER BY count DESC"
+cmipsmap query "SELECT service, COUNT(*) as count FROM resources GROUP BY service ORDER BY count DESC"
 
 # Find all EC2 instances in a specific region
-awsmap query "SELECT id, name, region FROM resources WHERE service='ec2' AND type='instance'"
+cmipsmap query "SELECT id, name, region FROM resources WHERE service='ec2' AND type='instance'"
 
 # View scan history
-awsmap query "SELECT * FROM scans ORDER BY timestamp DESC"
+cmipsmap query "SELECT * FROM scans ORDER BY timestamp DESC"
 
 # JSON or CSV output
-awsmap query "SELECT * FROM resources WHERE service='s3'" -f json
-awsmap query "SELECT service, id, name FROM resources" -f csv
+cmipsmap query "SELECT * FROM resources WHERE service='s3'" -f json
+cmipsmap query "SELECT service, id, name FROM resources" -f csv
 
 # Query tags (filter to resources that have the tag)
-awsmap query "SELECT id, name, json_extract(tags, '$.Owner') as owner FROM resources WHERE service='ec2' AND json_extract(tags, '$.Owner') IS NOT NULL"
+cmipsmap query "SELECT id, name, json_extract(tags, '$.Owner') as owner FROM resources WHERE service='ec2' AND json_extract(tags, '$.Owner') IS NOT NULL"
 ```
 
 **More SQL examples:** See `examples/queries/*.sql` for ready-to-use query templates you can customize.
 
 ### Pre-Built Query Library
 
-awsmap ships with 30 pre-built queries for common security, compliance, and operational tasks. No SQL knowledge required.
+cmipsmap ships with 30 pre-built queries for common security, compliance, and operational tasks. No SQL knowledge required.
 
 ```bash
 # List all available queries
-awsmap query --list
+cmipsmap query --list
 
 # Run a named query
-awsmap query -n admin-users
-awsmap query -n users-without-mfa
-awsmap query -n open-security-groups
-awsmap query -n untagged-resources
+cmipsmap query -n admin-users
+cmipsmap query -n users-without-mfa
+cmipsmap query -n open-security-groups
+cmipsmap query -n untagged-resources
 
 # Pass parameters (find resources with Owner tag)
-awsmap query -n resources-by-tag -P tag=Owner
+cmipsmap query -n resources-by-tag -P tag=Owner
 
 # Multiple parameters (find EC2 missing Environment tag)
-awsmap query -n missing-tag -P tag=Environment -P service=ec2
+cmipsmap query -n missing-tag -P tag=Environment -P service=ec2
 
 # Scope to a specific account
-awsmap query -n admin-users -a production
+cmipsmap query -n admin-users -a production
 
 # Show query SQL without running it
-awsmap query --show admin-users
+cmipsmap query --show admin-users
 
 # Run SQL from a file
-awsmap query -F my-query.sql
+cmipsmap query -F my-query.sql
 ```
 
 **Parameter format:** Use `-P parameter=value` where `parameter` is the query parameter name (e.g., `tag`, `service`) and `value` is what you're searching for. Example: `-P tag=Owner` means "filter by the Owner tag" (NOT `-P Owner=SomeValue`).
@@ -213,87 +209,87 @@ awsmap query -F my-query.sql
 | Query | Description | Example |
 |-------|-------------|---------|
 | **IAM / Security** | | |
-| `admin-users` | IAM users with admin permissions (direct + via group) | `awsmap query -n admin-users` |
-| `admin-roles` | IAM roles with admin permissions | `awsmap query -n admin-roles` |
-| `users-without-mfa` | IAM users without MFA enabled | `awsmap query -n users-without-mfa` |
-| `iam-inactive-users` | IAM users with no login and no access keys | `awsmap query -n iam-inactive-users` |
-| `old-access-keys` | IAM users with access keys | `awsmap query -n old-access-keys` |
-| `cross-account-roles` | IAM roles with trust policies allowing external accounts | `awsmap query -n cross-account-roles` |
-| `open-security-groups` | Security groups with 0.0.0.0/0 ingress rules | `awsmap query -n open-security-groups` |
-| `secrets-no-rotation` | Secrets Manager secrets without auto-rotation | `awsmap query -n secrets-no-rotation` |
+| `admin-users` | IAM users with admin permissions (direct + via group) | `cmipsmap query -n admin-users` |
+| `admin-roles` | IAM roles with admin permissions | `cmipsmap query -n admin-roles` |
+| `users-without-mfa` | IAM users without MFA enabled | `cmipsmap query -n users-without-mfa` |
+| `iam-inactive-users` | IAM users with no login and no access keys | `cmipsmap query -n iam-inactive-users` |
+| `old-access-keys` | IAM users with access keys | `cmipsmap query -n old-access-keys` |
+| `cross-account-roles` | IAM roles with trust policies allowing external accounts | `cmipsmap query -n cross-account-roles` |
+| `open-security-groups` | Security groups with 0.0.0.0/0 ingress rules | `cmipsmap query -n open-security-groups` |
+| `secrets-no-rotation` | Secrets Manager secrets without auto-rotation | `cmipsmap query -n secrets-no-rotation` |
 | **S3** | | |
-| `public-s3-buckets` | S3 buckets with public access enabled | `awsmap query -n public-s3-buckets` |
-| `encryption-status` | S3 buckets and their encryption configuration | `awsmap query -n encryption-status` |
-| `s3-no-versioning` | S3 buckets without versioning | `awsmap query -n s3-no-versioning` |
-| `s3-no-logging` | S3 buckets without access logging | `awsmap query -n s3-no-logging` |
+| `public-s3-buckets` | S3 buckets with public access enabled | `cmipsmap query -n public-s3-buckets` |
+| `encryption-status` | S3 buckets and their encryption configuration | `cmipsmap query -n encryption-status` |
+| `s3-no-versioning` | S3 buckets without versioning | `cmipsmap query -n s3-no-versioning` |
+| `s3-no-logging` | S3 buckets without access logging | `cmipsmap query -n s3-no-logging` |
 | **EC2 / EBS** | | |
-| `stopped-instances` | EC2 instances in stopped state | `awsmap query -n stopped-instances` |
-| `unused-volumes` | EBS volumes not attached to any instance | `awsmap query -n unused-volumes` |
-| `ebs-unencrypted` | EBS volumes without encryption | `awsmap query -n ebs-unencrypted` |
-| `unused-eips` | Elastic IPs not associated with any instance | `awsmap query -n unused-eips` |
-| `default-vpcs` | Default VPCs across all regions | `awsmap query -n default-vpcs` |
+| `stopped-instances` | EC2 instances in stopped state | `cmipsmap query -n stopped-instances` |
+| `unused-volumes` | EBS volumes not attached to any instance | `cmipsmap query -n unused-volumes` |
+| `ebs-unencrypted` | EBS volumes without encryption | `cmipsmap query -n ebs-unencrypted` |
+| `unused-eips` | Elastic IPs not associated with any instance | `cmipsmap query -n unused-eips` |
+| `default-vpcs` | Default VPCs across all regions | `cmipsmap query -n default-vpcs` |
 | **RDS** | | |
-| `rds-public` | RDS instances with public access enabled | `awsmap query -n rds-public` |
-| `rds-unencrypted` | RDS instances without encryption | `awsmap query -n rds-unencrypted` |
-| `rds-no-multi-az` | RDS instances without Multi-AZ | `awsmap query -n rds-no-multi-az` |
-| `rds-engines` | RDS instances grouped by engine | `awsmap query -n rds-engines` |
+| `rds-public` | RDS instances with public access enabled | `cmipsmap query -n rds-public` |
+| `rds-unencrypted` | RDS instances without encryption | `cmipsmap query -n rds-unencrypted` |
+| `rds-no-multi-az` | RDS instances without Multi-AZ | `cmipsmap query -n rds-no-multi-az` |
+| `rds-engines` | RDS instances grouped by engine | `cmipsmap query -n rds-engines` |
 | **Lambda** | | |
-| `lambda-runtimes` | Lambda functions grouped by runtime | `awsmap query -n lambda-runtimes` |
-| `lambda-high-memory` | Lambda functions with memory > 512 MB | `awsmap query -n lambda-high-memory` |
+| `lambda-runtimes` | Lambda functions grouped by runtime | `cmipsmap query -n lambda-runtimes` |
+| `lambda-high-memory` | Lambda functions with memory > 512 MB | `cmipsmap query -n lambda-high-memory` |
 | **Tags** | | |
-| `untagged-resources` | Resources with no tags | `awsmap query -n untagged-resources` |
-| `missing-tag` | Resources missing a specific tag | `awsmap query -n missing-tag -P tag=Owner` |
-| `resources-by-tag` | Resources that have a specific tag | `awsmap query -n resources-by-tag -P tag=Owner` |
+| `untagged-resources` | Resources with no tags | `cmipsmap query -n untagged-resources` |
+| `missing-tag` | Resources missing a specific tag | `cmipsmap query -n missing-tag -P tag=Owner` |
+| `resources-by-tag` | Resources that have a specific tag | `cmipsmap query -n resources-by-tag -P tag=Owner` |
 | **Inventory** | | |
-| `resources-by-service` | Resource count per service | `awsmap query -n resources-by-service` |
-| `resources-by-region` | Resource count per region | `awsmap query -n resources-by-region` |
-| `resources-by-account` | Resource count per account | `awsmap query -n resources-by-account` |
-| `resources-per-account-service` | Resource count per account per service | `awsmap query -n resources-per-account-service` |
+| `resources-by-service` | Resource count per service | `cmipsmap query -n resources-by-service` |
+| `resources-by-region` | Resource count per region | `cmipsmap query -n resources-by-region` |
+| `resources-by-account` | Resource count per account | `cmipsmap query -n resources-by-account` |
+| `resources-per-account-service` | Resource count per account per service | `cmipsmap query -n resources-per-account-service` |
 
-You can also add your own queries by placing `.sql` files in `~/.awsmap/queries/`. Use the same header format as the built-in queries (`-- name:`, `-- description:`, `-- params:`).
+You can also add your own queries by placing `.sql` files in `~/.cmipsmap/queries/`. Use the same header format as the built-in queries (`-- name:`, `-- description:`, `-- params:`).
 
 ### Natural Language Queries
 
-Ask questions about your inventory in plain English using `awsmap ask`. **No setup required** - works out of the box with a built-in zero-dependency parser.
+Ask questions about your inventory in plain English using `cmipsmap ask`. **No setup required** - works out of the box with a built-in zero-dependency parser.
 
 ```bash
-awsmap ask how many resources per region
-awsmap ask show me all EC2 instances without Owner tag
-awsmap ask which S3 buckets are in eu-west-1
-awsmap ask what services have the most resources
+cmipsmap ask how many resources per region
+cmipsmap ask show me all EC2 instances without Owner tag
+cmipsmap ask which S3 buckets are in eu-west-1
+cmipsmap ask what services have the most resources
 ```
 
-awsmap translates your question to SQL using a **built-in parser** (zero dependencies), shows you the generated query, and displays the results.
+cmipsmap translates your question to SQL using a **built-in parser** (zero dependencies), shows you the generated query, and displays the results.
 
 ### Examples Library
 
-Browse and run 1381 pre-built questions organized by AWS service using `awsmap examples`.
+Browse and run 1381 pre-built questions organized by AWS service using `cmipsmap examples`.
 
 ```bash
 # List all services with question counts
-awsmap examples
+cmipsmap examples
 
 # Browse questions for a service
-awsmap examples lambda
+cmipsmap examples lambda
 
 # Run a specific question by number
-awsmap examples lambda 5
+cmipsmap examples lambda 5
 
 # Search across all questions
-awsmap examples --search "public"
-awsmap examples --search "encryption"
+cmipsmap examples --search "public"
+cmipsmap examples --search "encryption"
 ```
 
 #### Multi-Account Queries
 
-When multiple accounts have been scanned, `awsmap ask` queries all of them by default. Use `-a` to scope to a single account:
+When multiple accounts have been scanned, `cmipsmap ask` queries all of them by default. Use `-a` to scope to a single account:
 
 ```bash
 # Query across all accounts
-awsmap ask show me all IAM users
+cmipsmap ask show me all IAM users
 
 # Scope to one account
-awsmap ask -a production show me Lambda functions
+cmipsmap ask -a production show me Lambda functions
 ```
 
 ## Drift Detection
@@ -302,40 +298,40 @@ Compare snapshots of your AWS inventory over time to detect what changed - resou
 
 ```bash
 # What did the most recent scan change? (no arguments: previous scan vs current)
-awsmap diff
+cmipsmap diff
 
 # What changed in the last 7 days?
-awsmap diff --from 7d
+cmipsmap diff --from 7d
 
 # Compare two specific dates
-awsmap diff --from 2026-01-15 --to 2026-02-09
+cmipsmap diff --from 2026-01-15 --to 2026-02-09
 
 # Scope to specific services
-awsmap diff --from 30d -s ec2,s3
+cmipsmap diff --from 30d -s ec2,s3
 
 # Scope to a specific account (by profile name, alias, or account ID)
-awsmap diff --from 7d -a production -r us-east-1
+cmipsmap diff --from 7d -a production -r us-east-1
 
 # Show only added or removed resources
-awsmap diff --from 7d --type added
-awsmap diff --from 7d --type removed
+cmipsmap diff --from 7d --type added
+cmipsmap diff --from 7d --type removed
 
 # Summary only (no resource details)
-awsmap diff --from 7d --summary
+cmipsmap diff --from 7d --summary
 
 # Ignore tag-only changes
-awsmap diff --from 30d --ignore-tags
+cmipsmap diff --from 30d --ignore-tags
 
 # JSON output
-awsmap diff --from 7d -f json -o drift-report.json
+cmipsmap diff --from 7d -f json -o drift-report.json
 
 # HTML report (interactive, with filters and dark mode)
-awsmap diff --from 7d -f html -o drift-report.html
+cmipsmap diff --from 7d -f html -o drift-report.html
 ```
 
-**How it works:** awsmap reconstructs point-in-time snapshots from your scan history. For each `(account, service)`, it finds the latest scan at or before the given date, then compares the two snapshots field by field. This correctly handles partial scans - if you scanned EC2 on Monday and S3 on Tuesday, each service uses its own latest scan.
+**How it works:** cmipsmap reconstructs point-in-time snapshots from your scan history. For each `(account, service)`, it finds the latest scan at or before the given date, then compares the two snapshots field by field. This correctly handles partial scans - if you scanned EC2 on Monday and S3 on Tuesday, each service uses its own latest scan.
 
-With no `--from`, `awsmap diff` compares the state before the most recent scan against the current state, so you can see exactly what your latest scan changed. `--to` without `--from` defaults `--from` to the scan immediately before `--to`.
+With no `--from`, `cmipsmap diff` compares the state before the most recent scan against the current state, so you can see exactly what your latest scan changed. `--to` without `--from` defaults `--from` to the scan immediately before `--to`.
 
 **Relative dates:** `7d`, `30d`, `90d`, `yesterday`, `today`, or exact dates like `2026-01-15`.
 
@@ -346,29 +342,29 @@ With no `--from`, `awsmap diff` compares the state before the most recent scan a
 
 ## Waste Detection
 
-Find idle or potentially wasteful resources from the data awsmap already collected. No new AWS API calls - the rules run over your latest stored snapshot.
+Find idle or potentially wasteful resources from the data cmipsmap already collected. No new AWS API calls - the rules run over your latest stored snapshot.
 
 ```bash
 # Run all rules against the current snapshot
-awsmap waste
+cmipsmap waste
 
 # Counts per rule only
-awsmap waste --summary
+cmipsmap waste --summary
 
 # Scope to one account (by profile name, alias, or account ID)
-awsmap waste -a production
+cmipsmap waste -a production
 
 # Run only specific rules
-awsmap waste -t unattached-ebs -t available-eni
+cmipsmap waste -t unattached-ebs -t available-eni
 
 # Change the age threshold for snapshots and AMIs (default 90 days)
-awsmap waste --min-age-days 180
+cmipsmap waste --min-age-days 180
 
 # Include default AWS resources (excluded by default)
-awsmap waste --include-defaults
+cmipsmap waste --include-defaults
 
 # HTML report (interactive, with filters and dark mode)
-awsmap waste -f html -o waste.html
+cmipsmap waste -f html -o waste.html
 ```
 
 **Rules:**
@@ -384,7 +380,7 @@ awsmap waste -f html -o waste.html
 | `old-ami` | AMIs older than `--min-age-days` (default 90) |
 | `stopped-instance` | EC2 instances in the `stopped` state |
 
-awsmap reports counts and the resources to act on. It does not estimate dollar costs. Output is `table` (default), `json`, or `html`; `is_default` resources are excluded unless you pass `--include-defaults`.
+cmipsmap reports counts and the resources to act on. It does not estimate dollar costs. Output is `table` (default), `json`, or `html`; `is_default` resources are excluded unless you pass `--include-defaults`.
 
 ## Tag Compliance
 
@@ -392,22 +388,22 @@ Audit tagging coverage across your inventory and score it against a set of requi
 
 ```bash
 # Coverage of "has at least one tag"
-awsmap tags
+cmipsmap tags
 
 # Compliance against required tags
-awsmap tags -R Owner,Environment,CostCenter
+cmipsmap tags -R Owner,Environment,CostCenter
 
 # Scope to an account and service, list only non-compliant resources
-awsmap tags -a production -s ec2 --noncompliant-only
+cmipsmap tags -a production -s ec2 --noncompliant-only
 
 # List only resources with zero tags
-awsmap tags --untagged-only
+cmipsmap tags --untagged-only
 
 # Score only, no resource listing
-awsmap tags -R Owner --summary
+cmipsmap tags -R Owner --summary
 
 # HTML report
-awsmap tags -R Owner,Environment -f html -o tag-compliance.html
+cmipsmap tags -R Owner,Environment -f html -o tag-compliance.html
 ```
 
 The report shows an overall compliance score, per-required-tag coverage (so you can see which tag is the gap), a per-service breakdown, and the list of non-compliant resources with their missing tags.
@@ -415,7 +411,7 @@ The report shows an overall compliance score, per-required-tag coverage (so you 
 - Required tags come from `-R/--required` (comma-separated or repeatable) or the `required_tags` config key. With neither set, compliance falls back to "has at least one tag".
 - A blank tag value (for example `Owner=`) counts as missing.
 - `is_default` resources are excluded by default; pass `--include-defaults` to keep them.
-- Set a default required set once: `awsmap config set required_tags Owner,Environment,CostCenter`.
+- Set a default required set once: `cmipsmap config set required_tags Owner,Environment,CostCenter`.
 - Output is `table` (default), `json`, or `html`.
 
 ## Querying a Specific Scan
@@ -424,55 +420,55 @@ By default `query` and `ask` run against the current snapshot (`is_current`). Us
 
 ```bash
 # List stored scans
-awsmap query --list-scans
+cmipsmap query --list-scans
 
 # Run a named query against the previous scan
-awsmap query --scan previous -n admin-users
+cmipsmap query --scan previous -n admin-users
 
 # Raw SQL against the latest scan (use the {scan_filter} placeholder)
-awsmap query --scan latest "SELECT service, COUNT(*) FROM resources WHERE {scan_filter} GROUP BY service"
+cmipsmap query --scan latest "SELECT service, COUNT(*) FROM resources WHERE {scan_filter} GROUP BY service"
 
 # Natural language against the first (oldest) scan
-awsmap ask --scan first show me ec2 instances
+cmipsmap ask --scan first show me ec2 instances
 ```
 
 Selectors: `latest`, `previous`, `first`, or an explicit `<scan_id>` (see `--list-scans`). Named queries, files, and `ask` apply the scope automatically. For raw inline SQL, include the `{scan_filter}` placeholder where the scope should go; using `--scan` on raw SQL without the placeholder reports an error instead of running an unscoped query.
 
 ## Demo Database
 
-Generate a realistic synthetic database to try awsmap without needing an AWS account. Covers all 150+ services, multiple accounts, and multiple scans with drift.
+Generate a realistic synthetic database to try cmipsmap without needing an AWS account. Covers all 150+ services, multiple accounts, and multiple scans with drift.
 
 ```bash
 # Generate with defaults (3 accounts, 3 scans, ~12,000 resources)
-awsmap demo
+cmipsmap demo
 
 # Custom options
-awsmap demo --accounts 2 --scans 5 --db ./demo.db
+cmipsmap demo --accounts 2 --scans 5 --db ./demo.db
 
 # Overwrite existing
-awsmap demo --force
+cmipsmap demo --force
 ```
 
 After generating, use `--db` to point any command at the demo database:
 
 ```bash
-awsmap query --db ~/.awsmap/demo.db -n admin-users
-awsmap ask --db ~/.awsmap/demo.db show me all EC2 instances
-awsmap diff --db ~/.awsmap/demo.db --from 30d
-awsmap examples lambda 5 --db ~/.awsmap/demo.db
+cmipsmap query --db ~/.cmipsmap/demo.db -n admin-users
+cmipsmap ask --db ~/.cmipsmap/demo.db show me all EC2 instances
+cmipsmap diff --db ~/.cmipsmap/demo.db --from 30d
+cmipsmap examples lambda 5 --db ~/.cmipsmap/demo.db
 ```
 
 Or set it as the default database:
 
 ```bash
-awsmap config set db ~/.awsmap/demo.db
+cmipsmap config set db ~/.cmipsmap/demo.db
 ```
 
-### Demo Options (`awsmap demo`)
+### Demo Options (`cmipsmap demo`)
 
 | Option | Description |
 |--------|-------------|
-| `--db` | Database path (default: `~/.awsmap/demo.db`) |
+| `--db` | Database path (default: `~/.cmipsmap/demo.db`) |
 | `--accounts` | Number of accounts to generate (1-5, default: 3) |
 | `--scans` | Number of scans per account for drift (1-5, default: 3) |
 | `--seed` | Random seed for reproducibility (default: 42) |
@@ -498,7 +494,7 @@ awsmap config set db ~/.awsmap/demo.db
 | `--no-db` | Skip local database storage |
 | `--list-services` | List available service collectors |
 
-### Query Options (`awsmap query`)
+### Query Options (`cmipsmap query`)
 
 | Option | Description |
 |--------|-------------|
@@ -510,18 +506,18 @@ awsmap config set db ~/.awsmap/demo.db
 | `-a, --account` | Scope to an account (account ID, account alias, or AWS profile) |
 | `--scan` | Scope to a scan: `latest`, `previous`, `first`, or a `<scan_id>` (raw SQL needs the `{scan_filter}` placeholder) |
 | `--list-scans` | List stored scans and exit |
-| `--db` | Database path (default: `~/.awsmap/inventory.db`) |
+| `--db` | Database path (default: `~/.cmipsmap/inventory.db`) |
 | `-f, --format` | Output format: `table` (default), `json`, `csv` |
 
-### Ask Options (`awsmap ask`)
+### Ask Options (`cmipsmap ask`)
 
 | Option | Description |
 |--------|-------------|
 | `-a, --account` | Scope to an account (account ID, account alias, or AWS profile) |
 | `--scan` | Scope to a scan: `latest`, `previous`, `first`, or a `<scan_id>` |
-| `--db` | Database path (default: `~/.awsmap/inventory.db`) |
+| `--db` | Database path (default: `~/.cmipsmap/inventory.db`) |
 
-### Diff Options (`awsmap diff`)
+### Diff Options (`cmipsmap diff`)
 
 | Option | Description |
 |--------|-------------|
@@ -535,9 +531,9 @@ awsmap config set db ~/.awsmap/demo.db
 | `--ignore-tags` | Ignore tag-only changes |
 | `-f, --format` | Output format: `table` (default), `json`, `html` |
 | `-o, --output` | Output file path |
-| `--db` | Database path (default: `~/.awsmap/inventory.db`) |
+| `--db` | Database path (default: `~/.cmipsmap/inventory.db`) |
 
-### Waste Options (`awsmap waste`)
+### Waste Options (`cmipsmap waste`)
 
 | Option | Description |
 |--------|-------------|
@@ -548,9 +544,9 @@ awsmap config set db ~/.awsmap/demo.db
 | `--summary` | Show counts per rule only, no resource listing |
 | `-f, --format` | Output format: `table` (default), `json`, `html` |
 | `-o, --output` | Output file path |
-| `--db` | Database path (default: `~/.awsmap/inventory.db`) |
+| `--db` | Database path (default: `~/.cmipsmap/inventory.db`) |
 
-### Tags Options (`awsmap tags`)
+### Tags Options (`cmipsmap tags`)
 
 | Option | Description |
 |--------|-------------|
@@ -563,84 +559,84 @@ awsmap config set db ~/.awsmap/demo.db
 | `--summary` | Show scores only, no resource listing |
 | `-f, --format` | Output format: `table` (default), `json`, `html` |
 | `-o, --output` | Output file path |
-| `--db` | Database path (default: `~/.awsmap/inventory.db`) |
+| `--db` | Database path (default: `~/.cmipsmap/inventory.db`) |
 
-### Examples Options (`awsmap examples`)
+### Examples Options (`cmipsmap examples`)
 
 | Argument / Option | Description |
 |-------------------|-------------|
 | `<service>` | Show questions for a specific service |
 | `<service> <number>` | Run question #N against the database |
 | `-s, --search` | Search all questions by keyword |
-| `--db` | Database path (default: `~/.awsmap/inventory.db`) |
+| `--db` | Database path (default: `~/.cmipsmap/inventory.db`) |
 
-### Config Commands (`awsmap config`)
+### Config Commands (`cmipsmap config`)
 
 Set persistent defaults so you don't have to repeat CLI flags. CLI flags always override config values.
 
-Only the keys listed below are accepted - unknown keys and invalid values are rejected. If the config file is manually edited and contains invalid entries, `awsmap config list` detects them, warns you, and auto-cleans the file.
+Only the keys listed below are accepted - unknown keys and invalid values are rejected. If the config file is manually edited and contains invalid entries, `cmipsmap config list` detects them, warns you, and auto-cleans the file.
 
 | Command | Description |
 |---------|-------------|
-| `awsmap config set key value` | Set a configuration value (validated) |
-| `awsmap config get key` | Get a configuration value |
-| `awsmap config list` | List all values (detects and cleans invalid entries) |
-| `awsmap config delete key` | Delete a configuration value |
+| `cmipsmap config set key value` | Set a configuration value (validated) |
+| `cmipsmap config get key` | Get a configuration value |
+| `cmipsmap config list` | List all values (detects and cleans invalid entries) |
+| `cmipsmap config delete key` | Delete a configuration value |
 
 **Available config keys (only these are accepted):**
 
 | Key | Applies to | Description | Example |
 |-----|-----------|-------------|---------|
-| `profile` | `awsmap` (scan) | Default AWS profile | `awsmap config set profile production` |
-| `regions` | `awsmap` (scan) | Default regions (comma-separated) | `awsmap config set regions us-east-1,eu-west-1` |
-| `services` | `awsmap` (scan) | Default services (comma-separated) | `awsmap config set services ec2,s3,lambda` |
-| `format` | `awsmap` (scan) | Default output format (`html`, `json`, `csv`) | `awsmap config set format json` |
-| `workers` | `awsmap` (scan) | Default parallel workers | `awsmap config set workers 20` |
-| `exclude_defaults` | `awsmap` (scan) | Exclude default AWS resources (`true`/`false`) | `awsmap config set exclude_defaults true` |
-| `db` | `query`, `ask` | Default database path | `awsmap config set db /path/to/inventory.db` |
-| `query_format` | `query` | Default query output format (`table`, `json`, `csv`) | `awsmap config set query_format csv` |
-| `required_tags` | `tags` | Default required tag keys (comma-separated) | `awsmap config set required_tags Owner,Environment,CostCenter` |
+| `profile` | `cmipsmap` (scan) | Default AWS profile | `cmipsmap config set profile production` |
+| `regions` | `cmipsmap` (scan) | Default regions (comma-separated) | `cmipsmap config set regions us-east-1,eu-west-1` |
+| `services` | `cmipsmap` (scan) | Default services (comma-separated) | `cmipsmap config set services ec2,s3,lambda` |
+| `format` | `cmipsmap` (scan) | Default output format (`html`, `json`, `csv`) | `cmipsmap config set format json` |
+| `workers` | `cmipsmap` (scan) | Default parallel workers | `cmipsmap config set workers 20` |
+| `exclude_defaults` | `cmipsmap` (scan) | Exclude default AWS resources (`true`/`false`) | `cmipsmap config set exclude_defaults true` |
+| `db` | `query`, `ask` | Default database path | `cmipsmap config set db /path/to/inventory.db` |
+| `query_format` | `query` | Default query output format (`table`, `json`, `csv`) | `cmipsmap config set query_format csv` |
+| `required_tags` | `tags` | Default required tag keys (comma-separated) | `cmipsmap config set required_tags Owner,Environment,CostCenter` |
 
 ```bash
 # Set your usual profile and regions
-awsmap config set profile production
-awsmap config set regions us-east-1,eu-west-1
+cmipsmap config set profile production
+cmipsmap config set regions us-east-1,eu-west-1
 
 # Now just run:
-awsmap
-# Equivalent to: awsmap -p production -r us-east-1,eu-west-1
+cmipsmap
+# Equivalent to: cmipsmap -p production -r us-east-1,eu-west-1
 
 # CLI flags still override config:
-awsmap -p staging    # Uses staging profile, but regions from config
+cmipsmap -p staging    # Uses staging profile, but regions from config
 ```
 
 ## Shell Completion
 
-awsmap supports tab completion for bash, zsh, and fish. Complete subcommands, service names, regions, AWS profiles, query names, account names, and config keys.
+cmipsmap supports tab completion for bash, zsh, and fish. Complete subcommands, service names, regions, AWS profiles, query names, account names, and config keys.
 
 ```bash
 # Bash
-eval "$(awsmap completion bash)"     # add to ~/.bashrc
+eval "$(cmipsmap completion bash)"     # add to ~/.bashrc
 
 # Zsh
-eval "$(awsmap completion zsh)"      # add to ~/.zshrc
+eval "$(cmipsmap completion zsh)"      # add to ~/.zshrc
 
 # Fish
-awsmap completion fish > ~/.config/fish/completions/awsmap.fish
+cmipsmap completion fish > ~/.config/fish/completions/cmipsmap.fish
 ```
 
 **What gets completed:**
 
 | Context | Completions |
 |---------|-------------|
-| `awsmap <TAB>` | Subcommands: ask, config, completion, demo, diff, examples, query |
-| `awsmap -s <TAB>` | Service names (ec2, s3, lambda, ...) |
-| `awsmap -r <TAB>` | AWS region names |
-| `awsmap -p <TAB>` | AWS profile names from ~/.aws/credentials and ~/.aws/config |
-| `awsmap query -n <TAB>` | Pre-built query names |
-| `awsmap query -a <TAB>` | Account aliases, profiles, and IDs from the database |
-| `awsmap config set <TAB>` | Valid configuration keys |
-| `awsmap examples <TAB>` | Service names from the examples library |
+| `cmipsmap <TAB>` | Subcommands: ask, config, completion, demo, diff, examples, query |
+| `cmipsmap -s <TAB>` | Service names (ec2, s3, lambda, ...) |
+| `cmipsmap -r <TAB>` | AWS region names |
+| `cmipsmap -p <TAB>` | AWS profile names from ~/.aws/credentials and ~/.aws/config |
+| `cmipsmap query -n <TAB>` | Pre-built query names |
+| `cmipsmap query -a <TAB>` | Account aliases, profiles, and IDs from the database |
+| `cmipsmap config set <TAB>` | Valid configuration keys |
+| `cmipsmap examples <TAB>` | Service names from the examples library |
 
 > **Important: Bash version requirement.** Shell completion requires **Bash 4.4 or newer**. macOS ships with Bash 3.2 (from 2007, frozen due to GPLv3 licensing) which is **not supported**. To fix this on macOS:
 >
@@ -724,18 +720,18 @@ Flat format with columns: service, type, id, name, region, arn, is_default, tags
 
 ```bash
 # Single tag
-awsmap -t Environment=Production
+cmipsmap -t Environment=Production
 
 # Multiple values for same key (OR logic)
-awsmap -t Owner=John -t Owner=Jane
+cmipsmap -t Owner=John -t Owner=Jane
 # Returns resources where Owner is "John" OR "Jane"
 
 # Multiple keys (AND logic)
-awsmap -t Owner=John -t Environment=Production
+cmipsmap -t Owner=John -t Environment=Production
 # Returns resources where Owner is "John" AND Environment is "Production"
 
 # Combined
-awsmap -t Owner=John -t Owner=Jane -t Environment=Production
+cmipsmap -t Owner=John -t Owner=Jane -t Environment=Production
 # Returns resources where (Owner is "John" OR "Jane") AND Environment is "Production"
 ```
 
@@ -745,17 +741,17 @@ AWS has two types of services:
 - **Regional services** (EC2, RDS, Lambda, etc.) - Resources exist in specific regions
 - **Global services** (IAM, Route53, CloudFront, etc.) - Resources are account-wide, not region-specific
 
-### How awsmap handles global services
+### How cmipsmap handles global services
 
-When you filter by region, awsmap intelligently includes global services based on their **control plane location**:
+When you filter by region, cmipsmap intelligently includes global services based on their **control plane location**:
 
 | Command | Behavior |
 |---------|----------|
-| `awsmap` (no region) | All services (regional + global) |
-| `awsmap -r us-east-1` | Regional in us-east-1 + global services with us-east-1 control plane |
-| `awsmap -r us-west-2` | Regional in us-west-2 + global services with us-west-2 control plane |
-| `awsmap -r eu-west-1` | Regional in eu-west-1 only (no global services) |
-| `awsmap -r eu-west-1 --include-global` | Regional in eu-west-1 + all global services |
+| `cmipsmap` (no region) | All services (regional + global) |
+| `cmipsmap -r us-east-1` | Regional in us-east-1 + global services with us-east-1 control plane |
+| `cmipsmap -r us-west-2` | Regional in us-west-2 + global services with us-west-2 control plane |
+| `cmipsmap -r eu-west-1` | Regional in eu-west-1 only (no global services) |
+| `cmipsmap -r eu-west-1 --include-global` | Regional in eu-west-1 + all global services |
 
 ### Global services by control plane
 
@@ -768,14 +764,14 @@ Based on [AWS Global Services documentation](https://docs.aws.amazon.com/whitepa
 
 ### S3 buckets
 
-S3 bucket names are globally unique, but **each bucket has a specific region**. awsmap treats S3 as a regional service:
+S3 bucket names are globally unique, but **each bucket has a specific region**. cmipsmap treats S3 as a regional service:
 
 ```bash
 # Only S3 buckets in eu-west-1
-awsmap -r eu-west-1 -s s3
+cmipsmap -r eu-west-1 -s s3
 
 # All S3 buckets
-awsmap -s s3
+cmipsmap -s s3
 ```
 
 ## Performance
@@ -792,16 +788,16 @@ Scans **150+ services** across all regions in parallel.
 **Tuning Options:**
 ```bash
 # Increase parallelism for faster scans
-awsmap -p myprofile -w 50
+cmipsmap -p myprofile -w 50
 
 # Reduce parallelism for rate-limited accounts
-awsmap -p myprofile -w 20
+cmipsmap -p myprofile -w 20
 
 # Scan specific services only (much faster)
-awsmap -p myprofile -s ec2,s3,lambda,iam
+cmipsmap -p myprofile -s ec2,s3,lambda,iam
 
 # Scan specific regions only
-awsmap -p myprofile -r us-east-1,eu-west-1
+cmipsmap -p myprofile -r us-east-1,eu-west-1
 ```
 
 **Why is the scan fast?**
@@ -813,15 +809,15 @@ awsmap -p myprofile -r us-east-1,eu-west-1
 
 ## IAM Permissions
 
-Only scanning (`awsmap`) calls AWS, and it needs read-only access to the services you want to inventory. The analysis commands (`query`, `ask`, `diff`, `waste`, `tags`) run entirely against your local database and require no AWS permissions.
+Only scanning (`cmipsmap`) calls AWS, and it needs read-only access to the services you want to inventory. The analysis commands (`query`, `ask`, `diff`, `waste`, `tags`) run entirely against your local database and require no AWS permissions.
 
 Beyond the per-service read actions, a scan calls `sts:GetCallerIdentity`, `account:ListRegions` (to discover enabled regions; falls back to a built-in region list if denied), and `iam:ListAccountAliases` (for the account alias).
 
 ### Recommended: ReadOnlyAccess plus a small supplement
 
-Attach the AWS managed [`ReadOnlyAccess`](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/ReadOnlyAccess.html) policy. It is maintained by AWS and covers the large majority of awsmap's read calls.
+Attach the AWS managed [`ReadOnlyAccess`](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/ReadOnlyAccess.html) policy. It is maintained by AWS and covers the large majority of cmipsmap's read calls.
 
-`ReadOnlyAccess` does not cover everything, though: it lags on some newer services (Amazon Location, MediaTailor, Timestream for InfluxDB, Textract adapters) and deliberately omits a few read actions (for example `glue:GetConnections`). awsmap calls 26 read actions that `ReadOnlyAccess` does not grant. They were computed by diffing awsmap's exact API calls against the live `ReadOnlyAccess` document, so the list is the precise difference, not a guess.
+`ReadOnlyAccess` does not cover everything, though: it lags on some newer services (Amazon Location, MediaTailor, Timestream for InfluxDB, Textract adapters) and deliberately omits a few read actions (for example `glue:GetConnections`). cmipsmap calls 26 read actions that `ReadOnlyAccess` does not grant. They were computed by diffing cmipsmap's exact API calls against the live `ReadOnlyAccess` document, so the list is the precise difference, not a guess.
 
 Attach this supplemental policy alongside `ReadOnlyAccess`:
 
@@ -830,7 +826,7 @@ Attach this supplemental policy alongside `ReadOnlyAccess`:
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "awsmapSupplementalReadOnly",
+      "Sid": "cmipsmapSupplementalReadOnly",
       "Effect": "Allow",
       "Action": [
         "airflow:GetEnvironment",
@@ -876,19 +872,19 @@ aws iam attach-role-policy \
 
 # 2. Create the supplemental policy from the JSON above and attach it
 aws iam create-policy \
-  --policy-name awsmap-supplemental-readonly \
-  --policy-document file://awsmap-supplemental-readonly.json
+  --policy-name cmipsmap-supplemental-readonly \
+  --policy-document file://cmipsmap-supplemental-readonly.json
 
 aws iam attach-role-policy \
   --role-name YourRoleName \
-  --policy-arn arn:aws:iam::<account-id>:policy/awsmap-supplemental-readonly
+  --policy-arn arn:aws:iam::<account-id>:policy/cmipsmap-supplemental-readonly
 ```
 
 Every collector call is wrapped so a denied permission never stops a scan: the affected resources are simply skipped. The supplement only removes those blind spots so the inventory is complete. All 26 actions are read-only.
 
 ### Alternative: no managed policy
 
-If you cannot use `ReadOnlyAccess`, grant read actions (`Describe*`, `List*`, `Get*`, plus `BatchGet*`/`Search*` where applicable) for the services awsmap scans, together with the supplemental actions above. The full standalone list covers about 150 service prefixes; see the [IAM Service Authorization Reference](https://docs.aws.amazon.com/service-authorization/latest/reference/reference_policies_actions-resources-contextkeys.html) for per-service read actions.
+If you cannot use `ReadOnlyAccess`, grant read actions (`Describe*`, `List*`, `Get*`, plus `BatchGet*`/`Search*` where applicable) for the services cmipsmap scans, together with the supplemental actions above. The full standalone list covers about 150 service prefixes; see the [IAM Service Authorization Reference](https://docs.aws.amazon.com/service-authorization/latest/reference/reference_policies_actions-resources-contextkeys.html) for per-service read actions.
 
 ## What's NOT Collected
 
@@ -917,7 +913,7 @@ We evaluated three approaches for natural language queries:
 |----------|----------|------|---------|---------|
 | **Ollama (local LLMs)** | ~80% | Free | Slow (seconds) | Yes |
 | **OpenAI / Anthropic APIs** | ~95% | Pay per query | Network dependent | No |
-| **Built-in parser (awsmap)** | **100%** | **Free** | **Instant** | **Yes** |
+| **Built-in parser (cmipsmap)** | **100%** | **Free** | **Instant** | **Yes** |
 
 - **Ollama** models are free and run locally, but when tested against real AWS inventory queries, accuracy was around 80% - one in five queries would generate wrong SQL or fail silently. Not acceptable for a CLI tool where users trust the output.
 - **OpenAI / Anthropic APIs** produce better results, but require API keys, cost money per query, and depend on network connectivity. Not ideal for an infrastructure tool that should just work.
@@ -925,13 +921,21 @@ We evaluated three approaches for natural language queries:
 
 The 1500 test questions (used during development to validate the parser) are designed to cover the vast majority of real-world use cases. The parser also includes typo tolerance, synonym support, and fuzzy matching to handle natural variations in how people phrase questions.
 
-> **Found a bug or an inaccurate query?** Please [open an issue](https://github.com/TocConsulting/awsmap/issues) and report it! Every report helps improve the parser for everyone. **If you have ideas for a better approach than the built-in NLQ, we're always open to suggestions.**
+> **Found a bug or an inaccurate query?** Please [open an issue](https://github.com/kiranrajanna/cmipsmap/issues) and report it! Every report helps improve the parser for everyone. **If you have ideas for a better approach than the built-in NLQ, we're always open to suggestions.**
 
 ## Support
 
 - **Documentation**: Check this README and [SERVICES.md](SERVICES.md)
-- **Issues**: Report bugs via [GitHub Issues](https://github.com/TocConsulting/awsmap/issues)
-- **Discussions**: Join conversations in [GitHub Discussions](https://github.com/TocConsulting/awsmap/discussions)
+- **Issues**: Report bugs via [GitHub Issues](https://github.com/kiranrajanna/cmipsmap/issues)
+- **Discussions**: Join conversations in [GitHub Discussions](https://github.com/kiranrajanna/cmipsmap/discussions)
+
+## Author
+
+**Kiran Rajanna**
+
+## Credits
+
+cmipsmap is derived from [awsmap](https://github.com/TocConsulting/awsmap) by Toc Consulting, rebranded and adapted for CMIPS.
 
 ## License
 

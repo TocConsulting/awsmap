@@ -5,7 +5,7 @@ VPC resource collector.
 import boto3
 from typing import List, Dict, Any, Optional
 
-from aws_inventory.collector import tags_to_dict, get_tag_value
+from cmips_inventory.collector import tags_to_dict, get_tag_value
 
 
 def collect_vpc_resources(session: boto3.Session, region: Optional[str], account_id: str) -> List[Dict[str, Any]]:

@@ -9,8 +9,8 @@ import concurrent.futures
 from difflib import get_close_matches
 from typing import List, Dict, Any, Optional, Callable
 
-from aws_inventory.auth import get_account_id, get_enabled_regions
-from aws_inventory.collectors.s3 import collect_s3_resources
+from cmips_inventory.auth import get_account_id, get_enabled_regions
+from cmips_inventory.collectors.s3 import collect_s3_resources
 
 
 # Global services grouped by control plane region
@@ -88,7 +88,7 @@ def get_collector_function(service_name: str) -> Optional[Callable]:
     function_name = f"collect_{module_name}_resources"
 
     try:
-        module = importlib.import_module(f'aws_inventory.collectors.{module_name}')
+        module = importlib.import_module(f'cmips_inventory.collectors.{module_name}')
         return getattr(module, function_name)
     except (ImportError, AttributeError):
         return None

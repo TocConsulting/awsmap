@@ -3,15 +3,15 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "awsmap"
+name = "cmipsmap"
 version = "1.8.0"
-description = "A fast, comprehensive tool for mapping and inventorying AWS resources across 150+ services and all regions"
+description = "CMIPS AWS inventory tool - maps and inventories AWS resources across 150+ services and all regions"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
-keywords = ["aws", "inventory", "cloud", "infrastructure", "devops", "boto3", "aws-resources", "multi-region"]
+keywords = ["cmips", "aws", "inventory", "cloud", "infrastructure", "devops", "boto3", "aws-resources", "multi-region"]
 authors = [
-    {name = "Tarek CHEIKH", email = "tarek@tocconsulting.fr"}
+    {name = "Kiran Rajanna", email = "kiranshadow@gmail.com"}
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -36,10 +36,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/TocConsulting/awsmap"
-Repository = "https://github.com/TocConsulting/awsmap"
-Issues = "https://github.com/TocConsulting/awsmap/issues"
-Documentation = "https://github.com/TocConsulting/awsmap#readme"
+Homepage = "https://github.com/kiranrajanna/cmipsmap"
+Repository = "https://github.com/kiranrajanna/cmipsmap"
+Issues = "https://github.com/kiranrajanna/cmipsmap/issues"
+Documentation = "https://github.com/kiranrajanna/cmipsmap#readme"
 
 [project.optional-dependencies]
 dev = [
@@ -53,7 +53,7 @@ dev = [
 ]
 
 [project.scripts]
-awsmap = "aws_inventory.cli:main"
+cmipsmap = "cmips_inventory.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -62,7 +62,7 @@ where = ["src"]
 "" = "src"
 
 [tool.setuptools.package-data]
-"aws_inventory" = ["queries/*.sql"]
+"cmips_inventory" = ["queries/*.sql"]
 
 [tool.black]
 line-length = 88

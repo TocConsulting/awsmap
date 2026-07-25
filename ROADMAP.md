@@ -2,9 +2,9 @@
 
 We currently cover **150 AWS services**. Below are the **86 services** we still need to add: **64 new collectors** and **22 extensions** to existing collectors.
 
-This list was built by comparing all **417 services available in boto3** against what awsmap already covers, then filtering out deprecated/sunset services and data-plane-only APIs that don't have inventoriable resources.
+This list was built by comparing all **417 services available in boto3** against what cmipsmap already covers, then filtering out deprecated/sunset services and data-plane-only APIs that don't have inventoriable resources.
 
-To contribute: pick a service, write a collector in `src/aws_inventory/collectors/`, and open a PR.
+To contribute: pick a service, write a collector in `src/cmips_inventory/collectors/`, and open a PR.
 
 ## New collectors (64)
 
@@ -123,6 +123,6 @@ Extend `workspaces.py`:
 - **workspaces-thin-client** - Thin Client environments, devices
 - **workspaces-web** - Web portals, browser settings
 
-## Note: **frauddetector** already in awsmap
+## Note: **frauddetector** already in cmipsmap
 
 **frauddetector** was put in maintenance mode by AWS on Nov 7, 2025. It still works but no longer accepts new customers. We may remove it in a future release.

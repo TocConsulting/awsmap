@@ -12,9 +12,9 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from aws_inventory.nlq import _scan_where, generate_sql
-from aws_inventory.queries_lib import prepare_query
-from aws_inventory.db import SCHEMA_SQL, list_scans, resolve_scan
+from cmips_inventory.nlq import _scan_where, generate_sql
+from cmips_inventory.queries_lib import prepare_query
+from cmips_inventory.db import SCHEMA_SQL, list_scans, resolve_scan
 
 
 def _db():

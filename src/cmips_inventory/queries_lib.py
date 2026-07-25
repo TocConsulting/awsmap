@@ -1,14 +1,14 @@
-"""Pre-built query library for awsmap query --name."""
+"""Pre-built query library for cmipsmap query --name."""
 
 import os
 import re
 
-from aws_inventory.nlq import _scan_where
+from cmips_inventory.nlq import _scan_where
 
 
 # Directories searched for .sql files (built-in first, then user)
 _BUILTIN_DIR = os.path.join(os.path.dirname(__file__), "queries")
-_USER_DIR = os.path.join(os.path.expanduser("~"), ".awsmap", "queries")
+_USER_DIR = os.path.join(os.path.expanduser("~"), ".cmipsmap", "queries")
 
 
 def _parse_header(sql_text):

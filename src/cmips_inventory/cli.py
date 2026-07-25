@@ -1,5 +1,5 @@
 """
-Command-line interface for AWS Inventory Tool.
+Command-line interface for cmipsmap - CMIPS AWS inventory tool.
 """
 
 import csv
@@ -12,34 +12,34 @@ import click
 from click.shell_completion import get_completion_class
 from typing import Optional, List
 
-from aws_inventory import __version__
-from aws_inventory.auth import create_session, validate_credentials, get_account_alias
-from aws_inventory.collector import collect_all, get_available_services, validate_services
-from aws_inventory.config import get_config, set_config, delete_config, list_config, validate_file, _VALID_KEYS
-from aws_inventory.db import (get_connection, store_scan, get_accounts, resolve_account_id,
+from cmips_inventory import __version__
+from cmips_inventory.auth import create_session, validate_credentials, get_account_alias
+from cmips_inventory.collector import collect_all, get_available_services, validate_services
+from cmips_inventory.config import get_config, set_config, delete_config, list_config, validate_file, _VALID_KEYS
+from cmips_inventory.db import (get_connection, store_scan, get_accounts, resolve_account_id,
                                account_label, run_query, format_table,
                                get_recent_scan_timestamps, get_scan_timestamp_before,
                                list_scans, resolve_scan)
-from aws_inventory.examples import (list_services as examples_list_services,
+from cmips_inventory.examples import (list_services as examples_list_services,
                                      list_questions as examples_list_questions,
                                      resolve_service as examples_resolve_service,
                                      search as examples_search, total_count as examples_total)
-from aws_inventory.completions import (complete_services, complete_regions, complete_profiles,
+from cmips_inventory.completions import (complete_services, complete_regions, complete_profiles,
                                        complete_query_names, complete_accounts, complete_config_keys,
                                        complete_example_services, complete_example_numbers,
                                        complete_waste_rules, complete_scan_selectors)
-from aws_inventory.diff import (normalize_timestamp, reconstruct_snapshot,
+from cmips_inventory.diff import (normalize_timestamp, reconstruct_snapshot,
                                 reconstruct_current_snapshot, compute_diff,
                                 build_summary, snapshot_metadata)
-from aws_inventory.demo import generate_demo_db
-from aws_inventory.diff_formatter import format_diff_table, format_diff_json, format_diff_html
-from aws_inventory.formatter import format_output, export_file
-from aws_inventory.nlq import generate_sql
-from aws_inventory.tags_audit import audit_tags
-from aws_inventory.tags_formatter import format_tags_table, format_tags_json, format_tags_html
-from aws_inventory.waste import find_waste, RULE_KEYS
-from aws_inventory.waste_formatter import format_waste_table, format_waste_json, format_waste_html
-from aws_inventory.queries_lib import list_named_queries, load_named_query, prepare_query, _parse_header
+from cmips_inventory.demo import generate_demo_db
+from cmips_inventory.diff_formatter import format_diff_table, format_diff_json, format_diff_html
+from cmips_inventory.formatter import format_output, export_file
+from cmips_inventory.nlq import generate_sql
+from cmips_inventory.tags_audit import audit_tags
+from cmips_inventory.tags_formatter import format_tags_table, format_tags_json, format_tags_html
+from cmips_inventory.waste import find_waste, RULE_KEYS
+from cmips_inventory.waste_formatter import format_waste_table, format_waste_json, format_waste_html
+from cmips_inventory.queries_lib import list_named_queries, load_named_query, prepare_query, _parse_header
 
 
 def print_progress(service: str, status: str) -> None:
@@ -48,7 +48,7 @@ def print_progress(service: str, status: str) -> None:
 
 
 @click.group(invoke_without_command=True)
-@click.version_option(version=__version__, prog_name='awsmap')
+@click.version_option(version=__version__, prog_name='cmipsmap')
 @click.option('--profile', '-p', default=None, shell_complete=complete_profiles, help='AWS profile name to use')
 @click.option('--region', '-r', multiple=True, shell_complete=complete_regions, help='AWS region(s) to scan (can be specified multiple times)')
 @click.option('--services', '-s', multiple=True, shell_complete=complete_services, help='Service(s) to scan (can be specified multiple times)')
@@ -80,36 +80,36 @@ def main(
     no_db: bool
 ) -> None:
     """
-    awsmap - Map and inventory AWS resources.
+    cmipsmap - Map and inventory AWS resources.
 
     Examples:
 
         # Scan all services in all regions (HTML output)
-        awsmap
+        cmipsmap
 
         # Scan specific services
-        awsmap -s ec2 -s s3 -s rds
+        cmipsmap -s ec2 -s s3 -s rds
 
         # Scan specific regions
-        awsmap -r us-east-1 -r eu-west-1
+        cmipsmap -r us-east-1 -r eu-west-1
 
         # Use specific AWS profile
-        awsmap -p production
+        cmipsmap -p production
 
         # Filter by tags
-        awsmap -t Owner=Tarek -t Environment=Production
+        cmipsmap -t Owner=Kiran -t Environment=Production
 
         # Output as JSON
-        awsmap -f json -o inventory.json
+        cmipsmap -f json -o inventory.json
 
         # List available collectors
-        awsmap --list-services
+        cmipsmap --list-services
 
         # Query stored inventory
-        awsmap query "SELECT service, COUNT(*) as count FROM resources GROUP BY service"
+        cmipsmap query "SELECT service, COUNT(*) as count FROM resources GROUP BY service"
 
         # Ask in natural language
-        awsmap ask show me all EC2 without Owner tag
+        cmipsmap ask show me all EC2 without Owner tag
     """
     ctx.ensure_object(dict)
 
@@ -288,7 +288,7 @@ def main(
             conn = get_connection(cfg_db)
             scan_id = store_scan(conn, result, profile=profile, account_alias=account_alias,
                                 scanned_services=result['metadata'].get('services_scanned_list'))
-            db_path = cfg_db or '~/.awsmap/inventory.db'
+            db_path = cfg_db or '~/.cmipsmap/inventory.db'
             conn.close()
             if not quiet:
                 click.echo(f"  Stored in: {db_path} (scan: {scan_id})")
@@ -307,7 +307,7 @@ def main(
 @click.option('--account', '-a', default=None, shell_complete=complete_accounts, help='Scope to an account (name, alias, or ID)')
 @click.option('--scan', 'scan_sel', default=None, shell_complete=complete_scan_selectors, help='Scope to a scan: latest | previous | first | <scan_id>')
 @click.option('--list-scans', 'list_scans_flag', is_flag=True, help='List stored scans and exit')
-@click.option('--db', default=None, help='Database path (default: ~/.awsmap/inventory.db)')
+@click.option('--db', default=None, help='Database path (default: ~/.cmipsmap/inventory.db)')
 @click.option('--format', '-f', 'fmt', type=click.Choice(['table', 'json', 'csv']), default='table', help='Output format')
 def query(sql, query_name, query_file, list_queries, show_name, params, account, scan_sel, list_scans_flag, db, fmt):
     """Run SQL query against the local inventory database.
@@ -315,25 +315,25 @@ def query(sql, query_name, query_file, list_queries, show_name, params, account,
     Three ways to query:
 
     \b
-      awsmap query "SELECT ..."          Raw SQL
-      awsmap query -n admin-users        Pre-built named query
-      awsmap query -F my-query.sql       SQL from a file
+      cmipsmap query "SELECT ..."          Raw SQL
+      cmipsmap query -n admin-users        Pre-built named query
+      cmipsmap query -F my-query.sql       SQL from a file
 
     \b
     Named queries accept parameters:
-      awsmap query -n resources-by-tag -P tag=Owner
-      awsmap query -n missing-tag -P tag=Environment -P service=ec2
+      cmipsmap query -n resources-by-tag -P tag=Owner
+      cmipsmap query -n missing-tag -P tag=Environment -P service=ec2
 
     \b
     List and inspect:
-      awsmap query --list                List all pre-built queries
-      awsmap query --show admin-users    Show the SQL without running
-      awsmap query --list-scans          List stored scans
+      cmipsmap query --list                List all pre-built queries
+      cmipsmap query --show admin-users    Show the SQL without running
+      cmipsmap query --list-scans          List stored scans
 
     \b
     Scope to a specific scan (latest | previous | first | <scan_id>):
-      awsmap query --scan previous -n admin-users
-      awsmap query --scan latest "SELECT service, COUNT(*) FROM resources WHERE {scan_filter} GROUP BY service"
+      cmipsmap query --scan previous -n admin-users
+      cmipsmap query --scan latest "SELECT service, COUNT(*) FROM resources WHERE {scan_filter} GROUP BY service"
     """
     # Apply config defaults
     if db is None:
@@ -369,7 +369,7 @@ def query(sql, query_name, query_file, list_queries, show_name, params, account,
         scans = list_scans(conn_tmp)
         conn_tmp.close()
         if not scans:
-            click.echo("No scans found. Run 'awsmap' first.", err=True)
+            click.echo("No scans found. Run 'cmipsmap' first.", err=True)
             sys.exit(1)
         click.echo(f"{'scan_id':<18}  {'timestamp':<24}  {'account':<22}  {'resources':>9}")
         click.echo(f"{'-' * 18}  {'-' * 24}  {'-' * 22}  {'-' * 9}")
@@ -405,13 +405,13 @@ def query(sql, query_name, query_file, list_queries, show_name, params, account,
         if account:
             account_id = resolve_account_id(conn_tmp, account)
             if not account_id:
-                click.echo(f"Error: account '{account}' not found. Use 'awsmap query --list-scans'.", err=True)
+                click.echo(f"Error: account '{account}' not found. Use 'cmipsmap query --list-scans'.", err=True)
                 conn_tmp.close()
                 sys.exit(1)
         if scan_sel:
             scan_id = resolve_scan(conn_tmp, scan_sel, account_id)
             if not scan_id:
-                click.echo(f"Error: scan '{scan_sel}' not found. Use 'awsmap query --list-scans'.", err=True)
+                click.echo(f"Error: scan '{scan_sel}' not found. Use 'cmipsmap query --list-scans'.", err=True)
                 conn_tmp.close()
                 sys.exit(1)
         conn_tmp.close()
@@ -513,17 +513,17 @@ def query(sql, query_name, query_file, list_queries, show_name, params, account,
 @click.argument('question', nargs=-1, required=True)
 @click.option('--account', '-a', default=None, shell_complete=complete_accounts, help='Scope to an account (name, alias, profile, or ID)')
 @click.option('--scan', 'scan_sel', default=None, shell_complete=complete_scan_selectors, help='Scope to a scan: latest | previous | first | <scan_id>')
-@click.option('--db', default=None, help='Database path (default: ~/.awsmap/inventory.db)')
+@click.option('--db', default=None, help='Database path (default: ~/.cmipsmap/inventory.db)')
 def ask(question, account, scan_sel, db):
     """Ask a question about your inventory in natural language.
 
     Examples:
 
-        awsmap ask show me S3 buckets
+        cmipsmap ask show me S3 buckets
 
-        awsmap ask -a prod how many resources per region
+        cmipsmap ask -a prod how many resources per region
 
-        awsmap ask --scan previous show me Lambda functions
+        cmipsmap ask --scan previous show me Lambda functions
     """
     # Apply config defaults
     if db is None:
@@ -539,7 +539,7 @@ def ask(question, account, scan_sel, db):
 
     accounts = get_accounts(conn)
     if not accounts:
-        click.echo("No scans found. Run 'awsmap' first.", err=True)
+        click.echo("No scans found. Run 'cmipsmap' first.", err=True)
         conn.close()
         sys.exit(1)
 
@@ -560,7 +560,7 @@ def ask(question, account, scan_sel, db):
     if scan_sel:
         scan_id = resolve_scan(conn, scan_sel, account_id)
         if not scan_id:
-            click.echo(f"Error: scan '{scan_sel}' not found. Use 'awsmap query --list-scans'.", err=True)
+            click.echo(f"Error: scan '{scan_sel}' not found. Use 'cmipsmap query --list-scans'.", err=True)
             conn.close()
             sys.exit(1)
 
@@ -597,15 +597,15 @@ def ask(question, account, scan_sel, db):
 @click.argument('service', required=False, default=None, shell_complete=complete_example_services)
 @click.argument('number', required=False, default=None, type=int, shell_complete=complete_example_numbers)
 @click.option('--search', '-s', 'search_term', default=None, help='Search examples by keyword')
-@click.option('--db', default=None, help='Database path (default: ~/.awsmap/inventory.db)')
+@click.option('--db', default=None, help='Database path (default: ~/.cmipsmap/inventory.db)')
 def examples(service, number, search_term, db):
     """Browse and run pre-built question examples.
 
     \b
-      awsmap examples                  List services with question counts
-      awsmap examples lambda           List Lambda questions
-      awsmap examples lambda 5         Run question #5
-      awsmap examples --search public  Search all questions
+      cmipsmap examples                  List services with question counts
+      cmipsmap examples lambda           List Lambda questions
+      cmipsmap examples lambda 5         Run question #5
+      cmipsmap examples --search public  Search all questions
     """
     # Apply config default for db
     if db is None:
@@ -630,15 +630,15 @@ def examples(service, number, search_term, db):
         click.echo(f"\n  {total} examples across {len(services)} services:\n")
         for svc_key, display, count in services:
             click.echo(f"  {svc_key:<25} {display:<25} ({count})")
-        click.echo(f"\n  Usage: awsmap examples <service>")
-        click.echo(f"         awsmap examples --search <keyword>\n")
+        click.echo(f"\n  Usage: cmipsmap examples <service>")
+        click.echo(f"         cmipsmap examples --search <keyword>\n")
         return
 
     # Resolve service name
     svc_key = examples_resolve_service(service)
     if svc_key is None:
         click.echo(f"Error: Unknown service '{service}'.", err=True)
-        click.echo("Run 'awsmap examples' to see available services.", err=True)
+        click.echo("Run 'cmipsmap examples' to see available services.", err=True)
         sys.exit(1)
 
     questions = examples_list_questions(svc_key)
@@ -648,7 +648,7 @@ def examples(service, number, search_term, db):
         click.echo(f"\n  {svc_key} ({len(questions)} examples):\n")
         for i, q in enumerate(questions, 1):
             click.echo(f"  {i:4}. {q}")
-        click.echo(f"\n  Usage: awsmap examples {svc_key} <number>\n")
+        click.echo(f"\n  Usage: cmipsmap examples {svc_key} <number>\n")
         return
 
     # Number given → run that question
@@ -702,20 +702,20 @@ def examples(service, number, search_term, db):
 @click.option('--output', '-o', 'output_file', default=None, help='Output file path')
 @click.option('--summary', is_flag=True, help='Show summary counts only')
 @click.option('--ignore-tags', is_flag=True, help='Exclude tag changes from modification detection')
-@click.option('--db', default=None, help='Database path (default: ~/.awsmap/inventory.db)')
+@click.option('--db', default=None, help='Database path (default: ~/.cmipsmap/inventory.db)')
 def diff(from_date, to_date, account, services, regions, change_type, fmt, output_file,
          summary, ignore_tags, db):
     """Compare resource snapshots to detect drift.
 
     \b
     Examples:
-      awsmap diff
-      awsmap diff --from 2026-01-15 --to 2026-02-09
-      awsmap diff --from 30d
-      awsmap diff --from 2026-01-15 -s ec2 -r us-east-1
-      awsmap diff --from 2026-01-15 --summary
-      awsmap diff --from 2026-01-15 -f html -o drift.html
-      awsmap diff --from 7d --type removed
+      cmipsmap diff
+      cmipsmap diff --from 2026-01-15 --to 2026-02-09
+      cmipsmap diff --from 30d
+      cmipsmap diff --from 2026-01-15 -s ec2 -r us-east-1
+      cmipsmap diff --from 2026-01-15 --summary
+      cmipsmap diff --from 2026-01-15 -f html -o drift.html
+      cmipsmap diff --from 7d --type removed
 
     With no --from, compares the state before the most recent scan against the
     current state (what the latest scan changed).
@@ -778,7 +778,7 @@ def diff(from_date, to_date, account, services, regions, change_type, fmt, outpu
         else:
             latest_ts, prev_cutoff = get_recent_scan_timestamps(conn, account_id)
             if latest_ts is None:
-                click.echo("No scans found. Run 'awsmap' first.", err=True)
+                click.echo("No scans found. Run 'cmipsmap' first.", err=True)
                 conn.close()
                 sys.exit(1)
             if prev_cutoff is None:
@@ -933,17 +933,17 @@ def diff(from_date, to_date, account, services, regions, change_type, fmt, outpu
               default='table', help='Output format')
 @click.option('--output', '-o', 'output_file', default=None, help='Output file path')
 @click.option('--summary', is_flag=True, help='Scores only, no resource listing')
-@click.option('--db', default=None, help='Database path (default: ~/.awsmap/inventory.db)')
+@click.option('--db', default=None, help='Database path (default: ~/.cmipsmap/inventory.db)')
 def tags(required, account, services, untagged_only, noncompliant_only,
          include_defaults, fmt, output_file, summary, db):
     """Audit tag-compliance coverage across your inventory.
 
     \b
     Examples:
-      awsmap tags
-      awsmap tags -R Owner,Environment,CostCenter
-      awsmap tags -a prod -s ec2 --noncompliant-only
-      awsmap tags -R Owner -f html -o tag-compliance.html
+      cmipsmap tags
+      cmipsmap tags -R Owner,Environment,CostCenter
+      cmipsmap tags -a prod -s ec2 --noncompliant-only
+      cmipsmap tags -R Owner -f html -o tag-compliance.html
     """
     if db is None:
         db = get_config('db')
@@ -1034,17 +1034,17 @@ def tags(required, account, services, untagged_only, noncompliant_only,
               default='table', help='Output format')
 @click.option('--output', '-o', 'output_file', default=None, help='Output file path')
 @click.option('--summary', is_flag=True, help='Counts per rule only, no resource listing')
-@click.option('--db', default=None, help='Database path (default: ~/.awsmap/inventory.db)')
+@click.option('--db', default=None, help='Database path (default: ~/.cmipsmap/inventory.db)')
 def waste(account, rule_types, min_age_days, include_defaults, fmt, output_file, summary, db):
     """Find potentially idle or wasteful resources.
 
     \b
     Examples:
-      awsmap waste
-      awsmap waste -a prod --summary
-      awsmap waste -t unattached-ebs -t available-eni
-      awsmap waste --min-age-days 180
-      awsmap waste -f html -o waste.html
+      cmipsmap waste
+      cmipsmap waste -a prod --summary
+      cmipsmap waste -t unattached-ebs -t available-eni
+      cmipsmap waste --min-age-days 180
+      cmipsmap waste -f html -o waste.html
     """
     if db is None:
         db = get_config('db')
@@ -1115,7 +1115,7 @@ def waste(account, rule_types, min_age_days, include_defaults, fmt, output_file,
 @main.group(invoke_without_command=True)
 @click.pass_context
 def config(ctx):
-    """Manage awsmap configuration (~/.awsmap/config).
+    """Manage cmipsmap configuration (~/.cmipsmap/config).
 
     \b
     Valid keys:
@@ -1130,11 +1130,11 @@ def config(ctx):
 
     \b
     Examples:
-      awsmap config set profile production
-      awsmap config set regions us-east-1,eu-west-1
-      awsmap config get profile
-      awsmap config list
-      awsmap config delete profile
+      cmipsmap config set profile production
+      cmipsmap config set regions us-east-1,eu-west-1
+      cmipsmap config get profile
+      cmipsmap config list
+      cmipsmap config delete profile
     """
     if ctx.invoked_subcommand is None:
         ctx.invoke(config_list)
@@ -1188,7 +1188,7 @@ def config_list():
             else:
                 hint = " | ".join(allowed)
             click.echo(f"    {k:<20} {hint}")
-        click.echo(f"\n  Usage: awsmap config set <key> <value>")
+        click.echo(f"\n  Usage: cmipsmap config set <key> <value>")
         return
     for k in sorted(cfg):
         click.echo(f"  {k}={cfg[k]}")
@@ -1212,17 +1212,17 @@ def completion(shell):
 
     \b
     Activate for your shell:
-      eval "$(awsmap completion bash)"     # add to ~/.bashrc
-      eval "$(awsmap completion zsh)"      # add to ~/.zshrc
-      awsmap completion fish > ~/.config/fish/completions/awsmap.fish
+      eval "$(cmipsmap completion bash)"     # add to ~/.bashrc
+      eval "$(cmipsmap completion zsh)"      # add to ~/.zshrc
+      cmipsmap completion fish > ~/.config/fish/completions/cmipsmap.fish
     """
     comp_cls = get_completion_class(shell)
-    comp = comp_cls(main, {}, "awsmap", "_AWSMAP_COMPLETE")
+    comp = comp_cls(main, {}, "cmipsmap", "_CMIPSMAP_COMPLETE")
     click.echo(comp.source())
 
 
 @main.command()
-@click.option('--db', default=None, help='Database path (default: ~/.awsmap/demo.db)')
+@click.option('--db', default=None, help='Database path (default: ~/.cmipsmap/demo.db)')
 @click.option('--accounts', default=3, type=click.IntRange(1, 5), help='Number of accounts (default: 3)')
 @click.option('--scans', default=3, type=click.IntRange(1, 5), help='Number of scans for drift (default: 3)')
 @click.option('--seed', default=42, type=int, help='Random seed for reproducibility (default: 42)')
@@ -1236,20 +1236,20 @@ def demo(db, accounts, scans, seed, force):
 
     \b
     Examples:
-      awsmap demo                           Generate with defaults
-      awsmap demo --db ./demo.db            Custom path
-      awsmap demo --accounts 2 --scans 5    2 accounts, 5 scans each
-      awsmap demo --force                   Overwrite existing
+      cmipsmap demo                           Generate with defaults
+      cmipsmap demo --db ./demo.db            Custom path
+      cmipsmap demo --accounts 2 --scans 5    2 accounts, 5 scans each
+      cmipsmap demo --force                   Overwrite existing
 
     \b
     After generating, try:
-      awsmap query --db ~/.awsmap/demo.db -n admin-users
-      awsmap ask --db ~/.awsmap/demo.db show me all EC2 instances
-      awsmap diff --db ~/.awsmap/demo.db --from 30d
-      awsmap examples lambda 5 --db ~/.awsmap/demo.db
+      cmipsmap query --db ~/.cmipsmap/demo.db -n admin-users
+      cmipsmap ask --db ~/.cmipsmap/demo.db show me all EC2 instances
+      cmipsmap diff --db ~/.cmipsmap/demo.db --from 30d
+      cmipsmap examples lambda 5 --db ~/.cmipsmap/demo.db
     """
     if db is None:
-        db = os.path.expanduser("~/.awsmap/demo.db")
+        db = os.path.expanduser("~/.cmipsmap/demo.db")
 
     if os.path.exists(db) and not force:
         click.echo(f"Error: {db} already exists. Use --force to overwrite.", err=True)
@@ -1280,12 +1280,12 @@ def demo(db, accounts, scans, seed, force):
     click.echo(f"  Services covered: {stats['services_covered']}")
     click.echo(f"  Database: {stats['db_path']}")
     click.echo(f"\nTry it:")
-    click.echo(f"  awsmap query --db {db} -n admin-users")
-    click.echo(f"  awsmap ask --db {db} show me all EC2 instances")
-    click.echo(f"  awsmap diff --db {db} --from 30d")
-    click.echo(f"  awsmap examples lambda 5 --db {db}")
+    click.echo(f"  cmipsmap query --db {db} -n admin-users")
+    click.echo(f"  cmipsmap ask --db {db} show me all EC2 instances")
+    click.echo(f"  cmipsmap diff --db {db} --from 30d")
+    click.echo(f"  cmipsmap examples lambda 5 --db {db}")
     click.echo(f"\nOr set it as default:")
-    click.echo(f"  awsmap config set db {db}")
+    click.echo(f"  cmipsmap config set db {db}")
     click.echo()
 
 

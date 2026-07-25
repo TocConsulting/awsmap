@@ -1,5 +1,5 @@
 """
-Natural Language Query (NLQ) engine for awsmap.
+Natural Language Query (NLQ) engine for cmipsmap.
 
 Converts natural-language questions about AWS inventory into SQL queries
 using a built-in zero-dependency parser.
@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 # 1. Service/Type taxonomy - DATA for fuzzy name matching only
 # ---------------------------------------------------------------------------
 
-_AWSMAP_TYPES = {
+_CMIPSMAP_TYPES = {
     "accessanalyzer": ["analyzer", "archive-rule"],
     "acm": ["certificate"],
     "acm-pca": ["certificate-authority", "permission"],
@@ -339,7 +339,7 @@ _KEYWORD_VALUE_PATTERNS = [
 # ---------------------------------------------------------------------------
 
 _VOCAB = set()
-for _svc, _types in _AWSMAP_TYPES.items():
+for _svc, _types in _CMIPSMAP_TYPES.items():
     _VOCAB.add(_svc)
     for _w in _svc.replace("-", " ").split():
         _VOCAB.add(_w)
@@ -368,19 +368,19 @@ _VOCAB |= {
 # ---------------------------------------------------------------------------
 
 def _normalize_service(service):
-    """Fuzzy-match a service name to a canonical _AWSMAP_TYPES key."""
+    """Fuzzy-match a service name to a canonical _CMIPSMAP_TYPES key."""
     if service is None:
         return None
     service = service.lower().strip().replace("_", "-").replace(" ", "-")
-    if service in _AWSMAP_TYPES:
+    if service in _CMIPSMAP_TYPES:
         return service
     # Fuzzy match
-    matches = difflib.get_close_matches(service, _AWSMAP_TYPES.keys(), n=1, cutoff=0.6)
+    matches = difflib.get_close_matches(service, _CMIPSMAP_TYPES.keys(), n=1, cutoff=0.6)
     if matches:
         return matches[0]
     # SequenceMatcher-scored prefix match
     best, best_score = None, 0
-    for key in _AWSMAP_TYPES:
+    for key in _CMIPSMAP_TYPES:
         score = difflib.SequenceMatcher(None, service, key).ratio()
         if score > best_score:
             best, best_score = key, score
@@ -394,8 +394,8 @@ def _normalize_type(rtype, service):
     if rtype is None:
         return None
     rtype = rtype.lower().strip().replace("_", "-").replace(" ", "-")
-    if service and service in _AWSMAP_TYPES:
-        types = _AWSMAP_TYPES[service]
+    if service and service in _CMIPSMAP_TYPES:
+        types = _CMIPSMAP_TYPES[service]
         # Exact match
         if rtype in types:
             return rtype
@@ -413,7 +413,7 @@ def _normalize_type(rtype, service):
                 return t
     # Search all services
     all_types = []
-    for svc, tlist in _AWSMAP_TYPES.items():
+    for svc, tlist in _CMIPSMAP_TYPES.items():
         all_types.extend(tlist)
     matches = difflib.get_close_matches(rtype, all_types, n=1, cutoff=0.6)
     if matches:
@@ -494,7 +494,7 @@ def _normalize_intent_fields(intent):
         intent["type"] = None
 
     # type = service name fix (e.g. type="lambda" → service="lambda", type=None)
-    if intent.get("type") and intent["type"] in _AWSMAP_TYPES:
+    if intent.get("type") and intent["type"] in _CMIPSMAP_TYPES:
         if not intent.get("service"):
             intent["service"] = intent["type"]
         intent["type"] = None
@@ -513,9 +513,9 @@ def _resolve_service_type_conflicts(intent):
     # Cross-validate service/type, fix if type belongs to a different service
     svc = intent.get("service")
     rtype = intent.get("type")
-    if svc and rtype and svc in _AWSMAP_TYPES:
-        if rtype not in _AWSMAP_TYPES[svc]:
-            for s, tlist in _AWSMAP_TYPES.items():
+    if svc and rtype and svc in _CMIPSMAP_TYPES:
+        if rtype not in _CMIPSMAP_TYPES[svc]:
+            for s, tlist in _CMIPSMAP_TYPES.items():
                 if rtype in tlist:
                     intent["service"] = s
                     break
@@ -534,8 +534,8 @@ def _infer_missing_service_type(intent, question):
 
     # Infer type from service when only one type exists
     svc = intent.get("service")
-    if svc and not intent.get("type") and svc in _AWSMAP_TYPES and not is_all_resources:
-        types = _AWSMAP_TYPES[svc]
+    if svc and not intent.get("type") and svc in _CMIPSMAP_TYPES and not is_all_resources:
+        types = _CMIPSMAP_TYPES[svc]
         if len(types) == 1:
             intent["type"] = types[0]
 
@@ -595,8 +595,8 @@ def _infer_missing_service_type(intent, question):
     svc = intent.get("service")
     # Skip type recovery for wafv2 (intentionally left None to query all ACL types)
     # Skip type recovery for "all SERVICE resources" queries
-    if svc and not intent.get("type") and svc in _AWSMAP_TYPES and q and svc != "wafv2" and not is_all_resources:
-        types = _AWSMAP_TYPES[svc]
+    if svc and not intent.get("type") and svc in _CMIPSMAP_TYPES and q and svc != "wafv2" and not is_all_resources:
+        types = _CMIPSMAP_TYPES[svc]
         if len(types) > 1:
             q_words = set(re.findall(r"[a-z0-9]+", q))
             # Add simple plural stemming
@@ -1374,7 +1374,7 @@ def _detect_action(q: str, qw: set, intent: dict) -> None:
 
 
 def _detect_service_type(q: str, qw: set, intent: dict) -> None:
-    """Detect service and type using scored matching against _AWSMAP_TYPES."""
+    """Detect service and type using scored matching against _CMIPSMAP_TYPES."""
     # Skip service detection for generic "resources" queries (without service qualifier)
     # But allow "EC2 resources", "Lambda resources", etc. to continue
     if "resource" in qw and not any(s in qw for s in ("ram", "explorer", "compute", "optimizer")):
@@ -1382,7 +1382,7 @@ def _detect_service_type(q: str, qw: set, intent: dict) -> None:
         # Handle hyphenated service names by checking component words
         has_service_qualifier = any(
             svc in qw or svc.replace("-", "") in qw or _has_word_or_compound(qw, svc)
-            for svc in _AWSMAP_TYPES.keys()
+            for svc in _CMIPSMAP_TYPES.keys()
         )
         if not has_service_qualifier:
             # Generic resource query - leave service/type as None
@@ -1417,7 +1417,7 @@ def _detect_service_type(q: str, qw: set, intent: dict) -> None:
     all_svc_resources = re.search(r'\ball\s+(\w+)\s+resources?\b', q)
     if all_svc_resources:
         svc_word = all_svc_resources.group(1)
-        if svc_word in _AWSMAP_TYPES or svc_word.replace("-", "") in _AWSMAP_TYPES:
+        if svc_word in _CMIPSMAP_TYPES or svc_word.replace("-", "") in _CMIPSMAP_TYPES:
             # Will be handled later to clear type after service detection
             pass
 
@@ -1436,7 +1436,7 @@ def _detect_service_type(q: str, qw: set, intent: dict) -> None:
     # Only fires when no explicit service name is present in the question
     has_explicit_service = any(
         svc in qw or svc.replace("-", "") in qw or _has_word_or_compound(qw, svc)
-        for svc in _AWSMAP_TYPES.keys()
+        for svc in _CMIPSMAP_TYPES.keys()
     )
     synonym_matched = False
     if not has_explicit_service:
@@ -1464,7 +1464,7 @@ def _detect_service_type(q: str, qw: set, intent: dict) -> None:
     # Generic service/type scoring (skip if forced above)
     if not force_service:
         best_svc, best_type, best_score = None, None, 0
-        for svc, types in _AWSMAP_TYPES.items():
+        for svc, types in _CMIPSMAP_TYPES.items():
             score, btype = _score_svc_type(filtered_qw, svc, types)
             if score > best_score:
                 best_score, best_svc, best_type = score, svc, btype
@@ -1580,8 +1580,8 @@ def _detect_service_type(q: str, qw: set, intent: dict) -> None:
         if intent.get("service") and qw_before:
             # Re-score with only words before "without"
             svc = intent["service"]
-            if svc in _AWSMAP_TYPES:
-                types = _AWSMAP_TYPES[svc]
+            if svc in _CMIPSMAP_TYPES:
+                types = _CMIPSMAP_TYPES[svc]
                 best_type_before, best_ts = None, 0
                 for t in types:
                     t_bare = t.replace("-", "")
@@ -1710,7 +1710,7 @@ def _detect_multi_service_patterns(q: str, qw: set, intent: dict) -> None:
         best_svc, best_type, best_score = None, None, 0
 
         # Use existing _score_svc_type logic
-        for svc, types in _AWSMAP_TYPES.items():
+        for svc, types in _CMIPSMAP_TYPES.items():
             score, matched_type = _score_svc_type(phrase_words, svc, types)
             if score > best_score:
                 best_score, best_svc, best_type = score, svc, matched_type
@@ -1718,8 +1718,8 @@ def _detect_multi_service_patterns(q: str, qw: set, intent: dict) -> None:
         # Require reasonable match (score >= 2 to avoid weak matches)
         # If service matches but type doesn't, use first type as default
         if best_score >= 2 and best_svc:
-            if not best_type and best_svc in _AWSMAP_TYPES:
-                best_type = _AWSMAP_TYPES[best_svc][0]
+            if not best_type and best_svc in _CMIPSMAP_TYPES:
+                best_type = _CMIPSMAP_TYPES[best_svc][0]
             if best_type:
                 matches.append((best_svc, best_type))
 
@@ -1773,8 +1773,8 @@ def _extract_relationship_patterns(q: str, qw: set, intent: dict) -> None:
         child_svc, child_type = None, None
 
         # First, check within same service
-        if parent_svc in _AWSMAP_TYPES:
-            for t in _AWSMAP_TYPES[parent_svc]:
+        if parent_svc in _CMIPSMAP_TYPES:
+            for t in _CMIPSMAP_TYPES[parent_svc]:
                 if (child_word in t or child_singular in t or
                     t.replace("-", "") == child_word or t == child_singular):
                     child_svc, child_type = parent_svc, t
@@ -1782,7 +1782,7 @@ def _extract_relationship_patterns(q: str, qw: set, intent: dict) -> None:
 
         # If not found, check other services
         if not child_type:
-            for svc, types in _AWSMAP_TYPES.items():
+            for svc, types in _CMIPSMAP_TYPES.items():
                 for t in types:
                     if (child_word in t or child_singular in t or
                         t.replace("-", "") == child_word or t == child_singular):
@@ -2859,7 +2859,7 @@ def _extract_limit(q: str, qw: set, intent: dict) -> None:
 def _builtin_parse(question: str) -> dict:
     """
     Built-in NL→intent parser. No LLM required.
-    Uses _AWSMAP_TYPES as data + regex patterns. Generic, not AWS-specific.
+    Uses _CMIPSMAP_TYPES as data + regex patterns. Generic, not AWS-specific.
 
     Orchestrates 14 specialized extractor functions for clean separation of concerns.
     """

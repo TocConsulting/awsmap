@@ -8,7 +8,7 @@ resources. Operates entirely on already-collected data.
 
 import json
 
-from aws_inventory.nlq import _scan_where
+from cmips_inventory.nlq import _scan_where
 
 
 # Matches the NLQ "is_empty" semantics for the tags column so a resource with

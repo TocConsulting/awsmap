@@ -1,6 +1,6 @@
 # Supported AWS Services
 
-This document lists all 150 AWS services supported by the AWS Inventory Tool, along with the specific resource types collected for each service.
+This document lists all 150 AWS services supported by cmipsmap, along with the specific resource types collected for each service.
 
 **Legend:**
 - *(global)* - Service is collected once globally, not per-region
@@ -1064,7 +1064,7 @@ These resources are created and managed by AWS automatically and are not conside
 
 ## Global Services
 
-Some AWS services are **global** (account-wide) rather than regional. When filtering by region, awsmap intelligently handles these based on their control plane location.
+Some AWS services are **global** (account-wide) rather than regional. When filtering by region, cmipsmap intelligently handles these based on their control plane location.
 
 ### Control Plane: us-east-1
 
@@ -1093,6 +1093,6 @@ These services have their control plane in us-west-2 and are included when scann
 
 ### S3 (Regional)
 
-S3 bucket names are globally unique, but each bucket has a **specific region**. awsmap treats S3 as a regional service and filters buckets by their actual region when using `-r`.
+S3 bucket names are globally unique, but each bucket has a **specific region**. cmipsmap treats S3 as a regional service and filters buckets by their actual region when using `-r`.
 
 Reference: [AWS Global Services Documentation](https://docs.aws.amazon.com/whitepapers/latest/aws-fault-isolation-boundaries/global-services.html)

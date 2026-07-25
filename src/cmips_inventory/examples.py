@@ -1,4 +1,4 @@
-"""Pre-built NLQ examples library for awsmap."""
+"""Pre-built NLQ examples library for cmipsmap."""
 
 
 _DISPLAY_NAMES = {

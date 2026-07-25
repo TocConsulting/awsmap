@@ -263,7 +263,7 @@ def format_html(data: Dict[str, Any]) -> str:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>awsmap - {esc(account_id)}</title>
+    <title>cmipsmap - {esc(account_id)}</title>
     <style>
         :root {{
             --primary: #0972d3;
@@ -855,6 +855,11 @@ def format_html(data: Dict[str, Any]) -> str:
             color: #ec7211;
         }}
 
+        .footer-author {{
+            font-size: 12px;
+            margin-top: 6px;
+        }}
+
         @media (max-width: 768px) {{
             header h1 {{ font-size: 20px; }}
             .meta-info {{ flex-direction: column; gap: 8px; }}
@@ -879,8 +884,8 @@ def format_html(data: Dict[str, Any]) -> str:
 
     <div class="container">
         <header>
-            <h1>AWS Inventory Report</h1>
-            <div class="subtitle">Comprehensive AWS Asset Discovery</div>
+            <h1>cmipsmap</h1>
+            <div class="subtitle">CMIPS AWS Inventory Report</div>
             <div class="meta-info">
                 <span class="meta-item">Account: {esc(account_id)}</span>
                 <span class="meta-item">Generated: {esc(timestamp)}</span>
@@ -948,7 +953,8 @@ def format_html(data: Dict[str, Any]) -> str:
         </div>
 
         <footer>
-            <div class="footer-logo">awsmap</div>
+            <div class="footer-logo">cmipsmap</div>
+            <div class="footer-author">CMIPS AWS Inventory Report &middot; Author: Kiran Rajanna</div>
         </footer>
     </div>
 
@@ -1219,7 +1225,7 @@ def format_html(data: Dict[str, Any]) -> str:
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'aws-inventory.csv';
+            a.download = 'cmips-inventory.csv';
             a.click();
             URL.revokeObjectURL(url);
         }}

@@ -9,13 +9,13 @@ import pytest
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from aws_inventory.diff import (
+from cmips_inventory.diff import (
     normalize_timestamp, reconstruct_snapshot, reconstruct_current_snapshot,
     compute_diff, build_summary, resource_key, _parse_json, _compute_tag_diffs,
     _dict_diff, snapshot_metadata
 )
-from aws_inventory.diff_formatter import format_diff_table, format_diff_json, format_diff_html
-from aws_inventory.db import get_connection, SCHEMA_SQL
+from cmips_inventory.diff_formatter import format_diff_table, format_diff_json, format_diff_html
+from cmips_inventory.db import get_connection, SCHEMA_SQL
 
 
 def _create_test_db(tmp_path):
@@ -733,9 +733,9 @@ def test_full_diff_summary_mode(tmp_path):
     conn.close()
 
 
-# ─── default-diff (bare `awsmap diff`) tests ───
+# ─── default-diff (bare `cmipsmap diff`) tests ───
 
-from aws_inventory.db import get_recent_scan_timestamps, get_scan_timestamp_before
+from cmips_inventory.db import get_recent_scan_timestamps, get_scan_timestamp_before
 
 
 def test_normalize_timestamp_utc_suffix_roundtrip():

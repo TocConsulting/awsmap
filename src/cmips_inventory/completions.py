@@ -1,5 +1,5 @@
 """
-Shell completion functions for awsmap CLI.
+Shell completion functions for cmipsmap CLI.
 
 Each function takes (ctx, param, incomplete) and returns a list of
 CompletionItem objects. All functions are wrapped in try/except so
@@ -30,7 +30,7 @@ _AWS_REGIONS = [
 def complete_services(ctx, param, incomplete):
     """Complete AWS service names from available collectors."""
     try:
-        from aws_inventory.collector import get_available_services
+        from cmips_inventory.collector import get_available_services
         return [
             CompletionItem(s)
             for s in get_available_services()
@@ -75,7 +75,7 @@ def complete_profiles(ctx, param, incomplete):
 def complete_query_names(ctx, param, incomplete):
     """Complete pre-built query names from .sql files."""
     try:
-        from aws_inventory.queries_lib import list_named_queries
+        from cmips_inventory.queries_lib import list_named_queries
         return [
             CompletionItem(name, help=desc)
             for name, desc, _ in list_named_queries()
@@ -88,8 +88,8 @@ def complete_query_names(ctx, param, incomplete):
 def complete_accounts(ctx, param, incomplete):
     """Complete account identifiers from the database."""
     try:
-        from aws_inventory.config import get_config
-        from aws_inventory.db import get_accounts, get_connection
+        from cmips_inventory.config import get_config
+        from cmips_inventory.db import get_accounts, get_connection
         db_path = get_config("db")
         conn = get_connection(db_path)
         accounts = get_accounts(conn)
@@ -110,7 +110,7 @@ def complete_accounts(ctx, param, incomplete):
 def complete_config_keys(ctx, param, incomplete):
     """Complete configuration key names."""
     try:
-        from aws_inventory.config import _VALID_KEYS
+        from cmips_inventory.config import _VALID_KEYS
         return [
             CompletionItem(k)
             for k in sorted(_VALID_KEYS)
@@ -123,7 +123,7 @@ def complete_config_keys(ctx, param, incomplete):
 def complete_example_services(ctx, param, incomplete):
     """Complete service names from the examples library."""
     try:
-        from aws_inventory.examples import list_services as examples_list_services
+        from cmips_inventory.examples import list_services as examples_list_services
         return [
             CompletionItem(svc, help=label)
             for svc, label, _count in examples_list_services()
@@ -138,8 +138,8 @@ def complete_scan_selectors(ctx, param, incomplete):
     try:
         items = [CompletionItem(s) for s in ("latest", "previous", "first")
                  if s.startswith(incomplete)]
-        from aws_inventory.config import get_config
-        from aws_inventory.db import get_connection, list_scans
+        from cmips_inventory.config import get_config
+        from cmips_inventory.db import get_connection, list_scans
         conn = get_connection(get_config("db"))
         for scan_id, timestamp, acct, alias, profile, count, _ in list_scans(conn)[:10]:
             if scan_id.startswith(incomplete):
@@ -153,7 +153,7 @@ def complete_scan_selectors(ctx, param, incomplete):
 def complete_waste_rules(ctx, param, incomplete):
     """Complete waste rule keys."""
     try:
-        from aws_inventory.waste import RULES
+        from cmips_inventory.waste import RULES
         return [
             CompletionItem(r["key"], help=r["title"])
             for r in RULES
@@ -166,7 +166,7 @@ def complete_waste_rules(ctx, param, incomplete):
 def complete_example_numbers(ctx, param, incomplete):
     """Complete question numbers with the question text as description."""
     try:
-        from aws_inventory.examples import list_questions
+        from cmips_inventory.examples import list_questions
         service = ctx.params.get("service")
         if not service:
             return []

@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from aws_inventory.db import get_connection, store_scan
+from cmips_inventory.db import get_connection, store_scan
 
 
 def _scan(account_id, timestamp, resources):
