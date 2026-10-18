@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS scans (
     resource_count INTEGER,
     services_scanned INTEGER,
     regions_scanned INTEGER,
-    scanned_services TEXT
+    scanned_services TEXT,
+    incomplete_services TEXT
 );
 
 CREATE TABLE IF NOT EXISTS resources (
@@ -106,6 +107,14 @@ def _migrate(conn):
     if "scanned_services" not in scan_cols:
         try:
             conn.execute("ALTER TABLE scans ADD COLUMN scanned_services TEXT")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+    # JSON list of services whose collection failed during the scan (org scans).
+    # Their rows are not stored, so the previous rows stay current; NULL = complete.
+    if "incomplete_services" not in scan_cols:
+        try:
+            conn.execute("ALTER TABLE scans ADD COLUMN incomplete_services TEXT")
             conn.commit()
         except sqlite3.OperationalError:
             pass
@@ -281,8 +290,9 @@ def store_scan(conn, result, profile=None, account_alias=None, scanned_services=
 
     conn.execute(
         "INSERT INTO scans (scan_id, account_id, account_alias, profile, timestamp, "
-        "duration_seconds, resource_count, services_scanned, regions_scanned, scanned_services) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "duration_seconds, resource_count, services_scanned, regions_scanned, scanned_services, "
+        "incomplete_services) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             scan_id,
             meta.get("account_id", ""),
@@ -294,6 +304,7 @@ def store_scan(conn, result, profile=None, account_alias=None, scanned_services=
             meta.get("services_scanned", 0),
             meta.get("regions_scanned", 0),
             json.dumps(services_covered),
+            json.dumps(meta["incomplete_services"]) if meta.get("incomplete_services") else None,
         ),
     )
 

@@ -150,6 +150,51 @@ awsmap query -n admin-users -a production
 awsmap ask -a staging show me all Lambda functions
 ```
 
+## AWS Organizations (Multi-Account Parallel Scan)
+
+Scan and inventory an entire AWS Organization or Organizational Unit (OU) in parallel with high throughput and built-in **Least Privilege** security.
+
+```bash
+# Scan entire organization using management/delegated admin profile
+awsmap org -p org-root
+
+# Fast preflight check verifying credentials and role assumption in every account
+awsmap org -p org-root --dry-run
+
+# Scan a specific OU (recursively)
+awsmap org -p org-root --ou ou-prod-12345678
+
+# Gentler on a slow or shared network: 64 concurrent API calls in total
+awsmap org -p org-root -w 64
+
+# Resume an interrupted scan (skips accounts already scanned in the last 24h)
+awsmap org -p org-root --resume
+
+# Scan specific services and regions across all accounts
+awsmap org -p org-root -s ec2 -s s3 -r us-east-1 -r eu-west-1
+
+# Target specific accounts
+awsmap org -p org-root --accounts 111122223333,444455556666
+```
+
+### High-Performance Architecture
+A full account is ~2,300 (service, region) tasks of ~2.7 API calls each. Measured on a real 103-account organization, the limit is neither CPU nor AWS throttling: it is **new TLS connections** (opening one per call caps out around 50 calls/s, reused keep-alive connections reach ~440 calls/s with the same threads). `awsmap org` is built around reusing connections:
+- **Work units**: accounts are processed in batches (`-c, --concurrency`, default 4 × processes, min 8). The tasks of the same (service, region) across up to 8 accounts form one unit, run by one thread over one client and one kept-alive HTTPS connection. Each request is signed for the account being processed; a call outside an account context fails instead of using another identity.
+- **Bounded sockets**: a unit closes its clients when it ends, so open connections stay close to the number of threads.
+- **One shared queue** for a few worker processes (`-j, --processes`, default one per core, max 6): a slow service or region only holds the thread running it, and the next batch is dispatched while the previous one drains.
+- **Concurrency (`-w, --workers`)**: total concurrent work units across all workers (default: 256).
+- **Low CPU per call**: each worker parses service models once and loads the CA bundle once (instead of once per TLS connection).
+- **No silent data loss from throttling**: every API response is inspected; a task that hit throttling, a 5xx or a timeout is re-run (up to 2 times) and the summary reports anything still incomplete. Endpoints that no account can reach (a service not offered in a region) are detected and skipped.
+- **No wasted calls**: (service, region) pairs that do not exist according to botocore's endpoint data are skipped, member-account opt-in regions are honoured, and IAM / S3 / Lambda per-resource calls are parallelised (bounded).
+- **Zero Database Contention**: Dedicated SQLite writer thread consuming from a thread-safe queue. Collectors never block or error on SQLite locks.
+
+### Least-Privilege IAM Session Policy
+Even when assuming standard administrative roles like `OrganizationAccountAccessRole`, `awsmap org` dynamically generates an inline IAM session policy passed to `sts:AssumeRole`. Under AWS IAM evaluation logic:
+1. **Strictly Read-Only**: Intersects permissions allowing only metadata inspection APIs (`*:Describe*`, `*:List*`, `*:Get*`).
+2. **Explicit Deny on Sensitive Data**: Explicitly blocks reading object payloads, secrets, parameters, or database tables (`s3:GetObject*`, `secretsmanager:GetSecretValue`, `ssm:GetParameter*`, `kms:Decrypt`, `dynamodb:GetItem`, `dynamodb:Scan`, etc.).
+3. **STS Compliant**: Minified JSON guaranteed to fit well within the 2,048-character AWS STS limit.
+Disable with `--no-session-policy` if full role permissions are explicitly needed.
+
 ## Query Your Inventory
 
 Every scan is automatically stored in a local SQLite database (`~/.awsmap/inventory.db`). Query it offline with raw SQL or natural language.
@@ -497,6 +542,31 @@ awsmap config set db ~/.awsmap/demo.db
 | `--exclude-defaults` | Exclude default AWS resources (default VPCs, security groups, etc.) |
 | `--no-db` | Skip local database storage |
 | `--list-services` | List available service collectors |
+
+### Organization Scan Options (`awsmap org`)
+
+| Option | Description |
+|--------|-------------|
+| `-p, --profile` | AWS profile for management or delegated admin account |
+| `--role-name` | IAM role to assume in member accounts (default: `OrganizationAccountAccessRole`) |
+| `--session-policy / --no-session-policy` | Enforce least-privilege read-only session policy on AssumeRole (default: enabled) |
+| `-j, --processes` | Worker processes (default: one per CPU core, max 6) |
+| `-w, --workers` | Total concurrent work units (≈ connections) across all workers (default: 256) |
+| `-c, --concurrency` | Accounts per batch (default: 4 × processes, min 8) |
+| `--ou` | Filter by Organizational Unit ID (recursively scans child OUs and accounts) |
+| `--accounts` | Comma-separated member account IDs to include |
+| `--exclude` | Comma-separated member account IDs to exclude |
+| `--dry-run` | Fast preflight check verifying credentials and role access in every account |
+| `--resume` | Skip accounts scanned in the last 24 hours |
+| `-s, --services` | Service(s) to scan (comma-separated or multiple flags) |
+| `-r, --region` | Region(s) to scan (comma-separated or multiple flags) |
+| `-t, --tag` | Filter by tag `Key=Value` |
+| `--exclude-defaults` | Exclude default AWS resources |
+| `--include-global` | Include global services when filtering regions |
+| `--external-id` | Optional External ID for role assumption |
+| `--db` | Database path (default: `~/.awsmap/inventory.db`) |
+| `--no-db` | Skip local database storage |
+| `-q, --quiet` | Suppress progress output |
 
 ### Query Options (`awsmap query`)
 

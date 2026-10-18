@@ -200,9 +200,11 @@ def collect_lightsail_resources(session: boto3.Session, region: Optional[str], a
     except Exception:
         pass
 
-    # Distributions (CDN)
+    # Distributions (CDN) are a global Lightsail resource, only queryable from
+    # us-east-1; get_distributions returns InvalidInputException in any other
+    # region, so it is collected once from us-east-1.
     try:
-        response = lightsail.get_distributions()
+        response = lightsail.get_distributions() if region == 'us-east-1' else {}
         for dist in response.get('distributions', []):
             dist_name = dist['name']
             dist_arn = dist.get('arn', f"arn:aws:lightsail:{region}:{account_id}:Distribution/{dist_name}")
@@ -337,10 +339,11 @@ def collect_lightsail_resources(session: boto3.Session, region: Optional[str], a
     except Exception:
         pass
 
-    # Domains
+    # Domains are a global Lightsail resource, only queryable from us-east-1
+    # (get_domains returns InvalidInputException in any other region).
     try:
-        paginator = lightsail.get_paginator('get_domains')
-        for page in paginator.paginate():
+        pages = lightsail.get_paginator('get_domains').paginate() if region == 'us-east-1' else []
+        for page in pages:
             for domain in page.get('domains', []):
                 domain_name = domain['name']
                 domain_arn = domain.get('arn', f"arn:aws:lightsail:{region}:{account_id}:Domain/{domain_name}")

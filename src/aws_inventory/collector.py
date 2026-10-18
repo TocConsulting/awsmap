@@ -6,6 +6,7 @@ import time
 import importlib
 import threading
 import concurrent.futures
+import botocore.session
 from difflib import get_close_matches
 from typing import List, Dict, Any, Optional, Callable
 
@@ -43,6 +44,23 @@ SERVICE_MODULE_MAP = {
     'timestream-influxdb': 'timestream_influxdb',
 }
 
+# boto3 client name a collector talks to, when it differs from the collector name.
+# Used to look up the regions a service is actually offered in, so we never spend
+# DNS lookups, retries and threads on (service, region) pairs that cannot exist.
+SERVICE_CLIENT_MAP = {
+    'vpc': 'ec2',
+    'cognito': 'cognito-idp',
+    'lexv2': 'lexv2-models',
+    'sso': 'sso-admin',
+    'eventbridge-scheduler': 'scheduler',
+    'eventbridge-pipes': 'pipes',
+    'opensearch-serverless': 'opensearchserverless',
+}
+
+_endpoint_data_lock = threading.Lock()
+_endpoint_data_session = None
+_service_region_cache: Dict[str, frozenset] = {}
+
 # Thread-safe tracking for progress
 _lock = threading.Lock()
 _service_progress = {}
@@ -72,6 +90,45 @@ def validate_services(services: List[str]) -> None:
         raise ValueError(
             '\n'.join(msgs) + '\n\nUse --list-services to see all available collectors.'
         )
+
+
+def _service_regions(client_name: str) -> frozenset:
+    """Regions (all partitions) where botocore's endpoint data says a service exists.
+
+    Returns an empty set when botocore has no region data for the service, which
+    callers must treat as "unknown" (scan every region).
+    """
+    global _endpoint_data_session
+    cached = _service_region_cache.get(client_name)
+    if cached is not None:
+        return cached
+    with _endpoint_data_lock:
+        if _endpoint_data_session is None:
+            _endpoint_data_session = botocore.session.Session()
+        regions = set()
+        try:
+            for partition in _endpoint_data_session.get_available_partitions():
+                regions.update(_endpoint_data_session.get_available_regions(
+                    client_name, partition_name=partition))
+        except Exception:
+            regions = set()
+        result = frozenset(regions)
+        _service_region_cache[client_name] = result
+        return result
+
+
+def supported_regions(service_name: str, regions: List[str]) -> List[str]:
+    """Filter regions down to those where the service is offered.
+
+    A region is only dropped when botocore knows the region (it hosts EC2) but does
+    not list the service there. Unknown regions and services without endpoint data
+    are always kept, so an outdated botocore can never hide resources.
+    """
+    available = _service_regions(SERVICE_CLIENT_MAP.get(service_name, service_name))
+    if not available:
+        return list(regions)
+    known_regions = _service_regions('ec2')
+    return [r for r in regions if r in available or r not in known_regions]
 
 
 def get_collector_function(service_name: str) -> Optional[Callable]:
@@ -229,7 +286,8 @@ def get_available_services() -> List[str]:
 def collect_s3_with_region_filter(
     session,
     account_id: str,
-    filter_regions: Optional[List[str]] = None
+    filter_regions: Optional[List[str]] = None,
+    table_regions: Optional[List[str]] = None
 ) -> tuple:
     """
     Collect S3 buckets with optional region filtering.
@@ -241,13 +299,16 @@ def collect_s3_with_region_filter(
         session: boto3.Session to use
         account_id: AWS account ID
         filter_regions: Optional list of regions to filter by
+        table_regions: Regions to scan for S3 Tables when no filter is given
+            (avoids an extra enabled-regions lookup when the caller already has them)
 
     Returns:
         Tuple of (resources list, elapsed time)
     """
     start = time.time()
     try:
-        resources = collect_s3_resources(session, None, account_id, filter_regions=filter_regions)
+        resources = collect_s3_resources(session, None, account_id,
+                                         filter_regions=filter_regions or table_regions)
 
         # Filter buckets by region if specified
         if filter_regions:
@@ -292,6 +353,72 @@ def collect_service_resources(
         return [], elapsed
 
 
+def plan_collection_tasks(
+    service_list: List[str],
+    region_list: List[str],
+    regions_filtered: bool,
+    include_global: bool = False
+) -> List[tuple]:
+    """
+    Build the list of (service, region) collection tasks for one account.
+
+    Global services and S3 get a single task with region None. Regional services get
+    one task per region where the service is offered. Global services and S3 come
+    first: they are the longest-running tasks, so starting them early shortens the
+    tail of the scan.
+
+    Args:
+        service_list: Services to collect
+        region_list: Regions to collect from
+        regions_filtered: True when the user restricted regions explicitly
+        include_global: Include global services even when regions are filtered
+
+    Returns:
+        List of (service, region) tuples
+    """
+    active_global_services = set()
+    if not regions_filtered or include_global:
+        active_global_services = set(GLOBAL_SERVICES)
+    else:
+        if 'us-east-1' in region_list:
+            active_global_services.update(US_EAST_1_GLOBAL_SERVICES)
+        if 'us-west-2' in region_list:
+            active_global_services.update(US_WEST_2_GLOBAL_SERVICES)
+
+    first: List[tuple] = []
+    regional: List[tuple] = []
+    for service in service_list:
+        if service in active_global_services or service == 's3':
+            first.append((service, None))
+        elif service not in GLOBAL_SERVICES:
+            regional.extend((service, region) for region in supported_regions(service, region_list))
+        # else: global service excluded by the region filter
+    return first + regional
+
+
+def run_collection_task(
+    session,
+    service: str,
+    region: Optional[str],
+    account_id: str,
+    region_list: List[str],
+    regions_filtered: bool
+) -> tuple:
+    """
+    Execute one task produced by plan_collection_tasks.
+
+    Returns:
+        Tuple of (resources list, elapsed time)
+    """
+    if service == 's3':
+        return collect_s3_with_region_filter(
+            session, account_id,
+            region_list if regions_filtered else None,
+            table_regions=region_list,
+        )
+    return collect_service_resources(session, service, region, account_id)
+
+
 def collect_all(
     session,
     services: Optional[List[str]] = None,
@@ -299,7 +426,8 @@ def collect_all(
     max_workers: int = 40,
     progress_callback: Optional[Callable[[str, str], None]] = None,
     show_timings: bool = False,
-    include_global: bool = False
+    include_global: bool = False,
+    validate_regions: bool = True
 ) -> Dict[str, Any]:
     """
     Collect resources from all specified services and regions.
@@ -312,13 +440,14 @@ def collect_all(
         progress_callback: Optional callback(service_name, status) for progress updates
         show_timings: If True, print service timing summary at the end
         include_global: If True, include global services even when filtering by non-global regions
+        validate_regions: If True, validate regions against get_enabled_regions (can disable if pre-validated)
 
     Returns:
         Dict with metadata and resources list
     """
-    global _service_progress, _service_timings
-    _service_progress = {}
-    _service_timings = {}
+    local_lock = threading.Lock()
+    local_service_progress: Dict[str, Dict[str, Any]] = {}
+    local_service_timings: Dict[str, float] = {}
 
     start_time = time.time()
 
@@ -336,97 +465,72 @@ def collect_all(
     # Determine regions
     if regions:
         region_list = regions
-        # Validate requested regions
-        enabled = get_enabled_regions(session)
-        unknown_regions = [r for r in region_list if r not in enabled]
-        if unknown_regions:
-            msgs = []
-            for r in unknown_regions:
-                matches = get_close_matches(r, enabled, n=3, cutoff=0.5)
-                msg = f"Unknown or disabled region '{r}'"
-                if matches:
-                    msg += f". Did you mean: {', '.join(matches)}?"
-                msgs.append(msg)
-            raise ValueError('\n'.join(msgs))
+        # Validate requested regions if requested
+        if validate_regions:
+            enabled = get_enabled_regions(session)
+            unknown_regions = [r for r in region_list if r not in enabled]
+            if unknown_regions:
+                msgs = []
+                for r in unknown_regions:
+                    matches = get_close_matches(r, enabled, n=3, cutoff=0.5)
+                    msg = f"Unknown or disabled region '{r}'"
+                    if matches:
+                        msg += f". Did you mean: {', '.join(matches)}?"
+                    msgs.append(msg)
+                raise ValueError('\n'.join(msgs))
     else:
         region_list = get_enabled_regions(session)
 
-    # Determine which global services to include based on region filter
-    # - No region filter: include all global services
-    # - include_global flag: include all global services
-    # - us-east-1 in regions: include us-east-1 control plane services (IAM, Route53, etc.)
-    # - us-west-2 in regions: include us-west-2 control plane services (NetworkManager, GlobalAccelerator)
-    active_global_services = set()
-    if not regions or include_global:
-        # No region filter or --include-global: include all global services
-        active_global_services = set(GLOBAL_SERVICES)
-    else:
-        # Include global services based on their control plane region
-        if 'us-east-1' in region_list:
-            active_global_services.update(US_EAST_1_GLOBAL_SERVICES)
-        if 'us-west-2' in region_list:
-            active_global_services.update(US_WEST_2_GLOBAL_SERVICES)
+    tasks = plan_collection_tasks(service_list, region_list, bool(regions), include_global)
 
     # Initialize progress tracking
-    for service in service_list:
-        if service in active_global_services:
-            _service_progress[service] = {'total': 1, 'completed': 0, 'resources': 0}
-        elif service == 's3':
-            # S3 is treated as regional - will filter by bucket region
-            _service_progress[service] = {'total': 1, 'completed': 0, 'resources': 0}
-        else:
-            _service_progress[service] = {'total': len(region_list), 'completed': 0, 'resources': 0}
+    for service, _ in tasks:
+        entry = local_service_progress.setdefault(service, {'total': 0, 'completed': 0, 'resources': 0})
+        entry['total'] += 1
 
     all_resources = []
     futures_map = {}
 
     def on_complete(service: str, resources: List[Dict[str, Any]], elapsed: float):
-        """Track completion, resources, and timing."""
-        with _lock:
-            _service_progress[service]['completed'] += 1
-            _service_progress[service]['resources'] += len(resources)
+        """Track completion, resources, and timing in a thread-safe manner."""
+        with local_lock:
+            if service not in local_service_progress:
+                local_service_progress[service] = {'total': 1, 'completed': 0, 'resources': 0}
+            local_service_progress[service]['completed'] += 1
+            local_service_progress[service]['resources'] += len(resources)
 
-            if service not in _service_timings:
-                _service_timings[service] = 0.0
-            _service_timings[service] += elapsed
+            if service not in local_service_timings:
+                local_service_timings[service] = 0.0
+            local_service_timings[service] += elapsed
 
-            progress = _service_progress[service]
+            progress = local_service_progress[service]
             if progress['completed'] >= progress['total']:
                 if progress_callback:
-                    progress_callback(service, f"Done: {progress['resources']} resources")
+                    try:
+                        progress_callback(service, f"Done: {progress['resources']} resources")
+                    except Exception:
+                        pass
 
     # Submit all collection tasks
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for service in service_list:
-            if service in active_global_services:
-                # Global service - single call, no region
-                if progress_callback:
-                    progress_callback(service, "Collecting...")
-                future = executor.submit(
-                    collect_service_resources,
-                    session, service, None, account_id
-                )
-                futures_map[future] = (service, None)
-            elif service == 's3':
+        announced = set()
+        for service, region in tasks:
+            if progress_callback and service not in announced:
+                announced.add(service)
+                progress_callback(service, "Collecting...")
+            if service == 's3':
                 # S3 - collect all buckets, filter by region later
-                if progress_callback:
-                    progress_callback(service, "Collecting...")
                 future = executor.submit(
                     collect_s3_with_region_filter,
-                    session, account_id, region_list if regions else None
+                    session, account_id, region_list if regions else None,
+                    region_list
                 )
-                futures_map[future] = (service, None)
-            elif service not in GLOBAL_SERVICES:
-                # Regional service - one call per region
-                if progress_callback:
-                    progress_callback(service, "Collecting...")
-                for region in region_list:
-                    future = executor.submit(
-                        collect_service_resources,
-                        session, service, region, account_id
-                    )
-                    futures_map[future] = (service, region)
-            # else: skip global services not in active_global_services
+            else:
+                future = executor.submit(
+                    collect_service_resources,
+                    session, service, region, account_id
+                )
+            futures_map[future] = (service, region)
 
         # Process completed futures
         for future in concurrent.futures.as_completed(futures_map):
@@ -434,9 +538,15 @@ def collect_all(
             try:
                 resources, elapsed = future.result()
                 all_resources.extend(resources)
-                on_complete(service, resources, elapsed)
+                try:
+                    on_complete(service, resources, elapsed)
+                except Exception:
+                    pass
             except Exception:
-                on_complete(service, [], 0.0)
+                try:
+                    on_complete(service, [], 0.0)
+                except Exception:
+                    pass
 
     elapsed_time = time.time() - start_time
 
@@ -445,9 +555,9 @@ def collect_all(
         print("\n" + "="*60)
         print("SERVICE TIMING SUMMARY (sorted by total time)")
         print("="*60)
-        sorted_timings = sorted(_service_timings.items(), key=lambda x: x[1], reverse=True)
+        sorted_timings = sorted(local_service_timings.items(), key=lambda x: x[1], reverse=True)
         for service, total_time in sorted_timings:
-            resources = _service_progress.get(service, {}).get('resources', 0)
+            resources = local_service_progress.get(service, {}).get('resources', 0)
             print(f"{service:30} {total_time:8.2f}s  ({resources} resources)")
         print("="*60)
         print(f"{'TOTAL':30} {elapsed_time:8.2f}s  ({len(all_resources)} resources)")

@@ -2,11 +2,12 @@
 Lambda resource collector.
 """
 
-import asyncio
-
-import aiobotocore.session
 import boto3
 from typing import List, Dict, Any, Optional
+
+from aws_inventory.parallel import bounded_map
+
+_TAG_WORKERS = 4
 
 
 def collect_lambda__resources(session: boto3.Session, region: Optional[str], account_id: str) -> List[Dict[str, Any]]:
@@ -33,18 +34,18 @@ def collect_lambda__resources(session: boto3.Session, region: Optional[str], acc
     except Exception:
         pass
 
-    # Fetch tags using asyncio
-    tags_map = {}
-    if functions:
-        profile = session.profile_name
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    # Fetch tags with the same client (and therefore the same credentials) that
+    # listed the functions. The previous asyncio path rebuilt a session from the
+    # profile name, which silently used the wrong account for assumed-role and
+    # environment credentials.
+    def _tags(func_arn: str) -> Dict[str, str]:
         try:
-            tags_map = loop.run_until_complete(_fetch_tags_async(profile, region, [f['FunctionArn'] for f in functions]))
+            return lambda_client.list_tags(Resource=func_arn).get('Tags', {}) or {}
         except Exception:
-            pass
-        finally:
-            loop.close()
+            return {}
+
+    arns = [f['FunctionArn'] for f in functions]
+    tags_map = dict(zip(arns, bounded_map(_tags, arns, _TAG_WORKERS)))
 
     # Build function resources
     for func in functions:
@@ -132,19 +133,3 @@ def collect_lambda__resources(session: boto3.Session, region: Optional[str], acc
 
     return resources
 
-
-async def _fetch_tags_async(profile: str, region: str, arns: List[str]) -> Dict[str, Dict[str, str]]:
-    """Fetch tags for all functions using asyncio."""
-    session = aiobotocore.session.AioSession(profile=profile)
-
-    async with session.create_client('lambda', region_name=region) as client:
-        async def get_tags(arn):
-            try:
-                resp = await client.list_tags(Resource=arn)
-                return arn, resp.get('Tags', {})
-            except Exception:
-                return arn, {}
-
-        tasks = [get_tags(arn) for arn in arns]
-        results = await asyncio.gather(*tasks)
-        return dict(results)

@@ -18,6 +18,10 @@ _VALID_KEYS = {
     "db":               None,
     "query_format":     ("table", "json", "csv"),
     "required_tags":    None,
+    "org_role_name":    None,
+    "org_concurrency":  "integer",
+    "org_workers":      "integer",
+    "org_processes":    "integer",
 }
 
 

@@ -34,6 +34,9 @@ def collect_iotsitewise_resources(session: boto3.Session, region: Optional[str],
     resources = []
     sitewise = session.client('iotsitewise', region_name=region)
 
+    # Assets are listed per asset model, so model ids are collected here.
+    asset_model_ids = []
+
     # Asset Models
     try:
         paginator = sitewise.get_paginator('list_asset_models')
@@ -42,6 +45,7 @@ def collect_iotsitewise_resources(session: boto3.Session, region: Optional[str],
                 model_id = model['id']
                 model_arn = model.get('arn', f"arn:aws:iotsitewise:{region}:{account_id}:asset-model/{model_id}")
                 model_name = model.get('name', model_id)
+                asset_model_ids.append(model_id)
 
                 status = model.get('status', {})
                 details = {
@@ -64,34 +68,37 @@ def collect_iotsitewise_resources(session: boto3.Session, region: Optional[str],
     except Exception:
         pass
 
-    # Assets
-    try:
-        paginator = sitewise.get_paginator('list_assets')
-        for page in paginator.paginate():
-            for asset in page.get('assetSummaries', []):
-                asset_id = asset['id']
-                asset_arn = asset.get('arn', f"arn:aws:iotsitewise:{region}:{account_id}:asset/{asset_id}")
-                asset_name = asset.get('name', asset_id)
+    # Assets. list_assets requires an asset model id (its default filter, ALL,
+    # is invalid without one), so it is queried once per asset model. This also
+    # returns every asset, not just the top-level ones a bare filter would give.
+    for model_id in asset_model_ids:
+        try:
+            paginator = sitewise.get_paginator('list_assets')
+            for page in paginator.paginate(assetModelId=model_id):
+                for asset in page.get('assetSummaries', []):
+                    asset_id = asset['id']
+                    asset_arn = asset.get('arn', f"arn:aws:iotsitewise:{region}:{account_id}:asset/{asset_id}")
+                    asset_name = asset.get('name', asset_id)
 
-                status = asset.get('status', {})
-                details = {
-                    'description': asset.get('description'),
-                    'asset_model_id': asset.get('assetModelId'),
-                    'status': status.get('state'),
-                }
+                    status = asset.get('status', {})
+                    details = {
+                        'description': asset.get('description'),
+                        'asset_model_id': asset.get('assetModelId'),
+                        'status': status.get('state'),
+                    }
 
-                resources.append({
-                    'service': 'iotsitewise',
-                    'type': 'asset',
-                    'id': asset_id,
-                    'arn': asset_arn,
-                    'name': asset_name,
-                    'region': region,
-                    'details': details,
-                    'tags': {}
-                })
-    except Exception:
-        pass
+                    resources.append({
+                        'service': 'iotsitewise',
+                        'type': 'asset',
+                        'id': asset_id,
+                        'arn': asset_arn,
+                        'name': asset_name,
+                        'region': region,
+                        'details': details,
+                        'tags': {}
+                    })
+        except Exception:
+            pass
 
     # Gateways
     try:

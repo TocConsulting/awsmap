@@ -40,11 +40,39 @@ from aws_inventory.tags_formatter import format_tags_table, format_tags_json, fo
 from aws_inventory.waste import find_waste, RULE_KEYS
 from aws_inventory.waste_formatter import format_waste_table, format_waste_json, format_waste_html
 from aws_inventory.queries_lib import list_named_queries, load_named_query, prepare_query, _parse_header
+from aws_inventory.engine import DEFAULT_TOTAL_CONCURRENCY
+from aws_inventory.org import (
+    DEFAULT_ROLE_NAME,
+    build_scoped_session_policy,
+    discover_org_accounts,
+    OrgInventoryOrchestrator,
+)
 
 
 def print_progress(service: str, status: str) -> None:
     """Print progress update for a service."""
     click.echo(f"  {service.upper():20} {status}")
+
+
+def _label_account_column(conn, columns, rows):
+    """
+    For human-readable output, replace an account_id column's values with the
+    friendly account label (alias, else profile, else the raw id) and rename the
+    header to 'account'. This matters for org-wide results that span many accounts.
+    Machine formats (json/csv) are left untouched so the raw id is preserved.
+    """
+    if 'account_id' not in columns:
+        return columns, rows
+    idx = columns.index('account_id')
+    labels = {aid: (alias or profile or aid) for aid, alias, profile in get_accounts(conn)}
+    new_columns = list(columns)
+    new_columns[idx] = 'account'
+    new_rows = []
+    for row in rows:
+        row = list(row)
+        row[idx] = labels.get(row[idx], row[idx])
+        new_rows.append(row)
+    return new_columns, new_rows
 
 
 @click.group(invoke_without_command=True)
@@ -296,6 +324,250 @@ def main(
             if not quiet:
                 click.echo(f"  Warning: Failed to store in database: {e}")
 
+@main.command()
+@click.option('--profile', '-p', default=None, shell_complete=complete_profiles, help='AWS profile for management or delegated admin account')
+@click.option('--role-name', default=None, help=f'Role to assume in member accounts (default: {DEFAULT_ROLE_NAME})')
+@click.option('--session-policy/--no-session-policy', default=True, help='Enforce least-privilege read-only session policy on AssumeRole (default: enabled)')
+@click.option('--external-id', default=None, help='External ID for role assumption')
+@click.option('--concurrency', '-c', default=None, type=click.IntRange(min=1), help='Accounts per batch (default: 4 x processes, min 8)')
+@click.option('--workers', '-w', default=None, type=click.IntRange(min=1), help=f'Total concurrent work units (about one connection each) across all worker processes (default: {DEFAULT_TOTAL_CONCURRENCY}); lower it on a slow or shared network')
+@click.option('--processes', '-j', default=None, type=click.IntRange(min=1), help='Worker processes (default: one per CPU core, max 6)')
+@click.option('--ou', default=None, help='Filter by Organizational Unit ID (e.g. ou-xxxx-yyyy)')
+@click.option('--accounts', '-a', multiple=True, help='Account ID(s), alias(es), or name(s) to include (comma-separated or repeatable)')
+@click.option('--exclude', '-e', multiple=True, help='Account ID(s), alias(es), or name(s) to exclude (comma-separated or repeatable)')
+@click.option('--services', '-s', multiple=True, shell_complete=complete_services, help='Service(s) to scan')
+@click.option('--region', '-r', multiple=True, shell_complete=complete_regions, help='AWS region(s) to scan')
+@click.option('--tag', '-t', multiple=True, help='Filter by tag (Key=Value format)')
+@click.option('--exclude-defaults', is_flag=True, help='Exclude default AWS resources')
+@click.option('--include-global', is_flag=True, help='Include global services even when filtering regions')
+@click.option('--db', default=None, help='Database path (default: ~/.awsmap/inventory.db)')
+@click.option('--no-db', is_flag=True, help='Skip local database storage')
+@click.option('--resume', is_flag=True, help='Skip accounts scanned in the last 24 hours')
+@click.option('--dry-run', is_flag=True, help='Verify access to all member accounts without collecting resources')
+@click.option('--quiet', '-q', is_flag=True, help='Suppress progress output')
+def org(
+    profile: Optional[str],
+    role_name: Optional[str],
+    session_policy: bool,
+    external_id: Optional[str],
+    concurrency: Optional[int],
+    workers: Optional[int],
+    processes: Optional[int],
+    ou: Optional[str],
+    accounts: tuple,
+    exclude: tuple,
+    services: tuple,
+    region: tuple,
+    tag: tuple,
+    exclude_defaults: bool,
+    include_global: bool,
+    db: Optional[str],
+    no_db: bool,
+    resume: bool,
+    dry_run: bool,
+    quiet: bool,
+):
+    """Scan and inventory an entire AWS Organization in parallel.
+
+    Accounts are scanned in batches by a few worker processes; the same
+    (service, region) is collected for several accounts over one reused HTTPS
+    connection, with automatic least-privilege IAM session policy restriction on
+    role assumption.
+
+    \b
+    Examples:
+      # Scan all active accounts in the organization using root/management profile
+      awsmap org -p org-root
+
+      # Fast dry-run preflight check (validates credentials and role assumption in <2s)
+      awsmap org -p org-root --dry-run
+
+      # Scan a specific OU
+      awsmap org -p org-root --ou ou-prod-12345678
+
+      # Gentler on a slow network: 64 concurrent API calls in total
+      awsmap org -p org-root -w 64
+
+      # Resume an interrupted scan (skips accounts scanned in the last 24 hours)
+      awsmap org -p org-root --resume
+
+      # Scan specific services and regions across all accounts
+      awsmap org -p org-root -s ec2 -s s3 -r us-east-1 -r eu-west-1
+
+      # Target specific member accounts
+      awsmap org -p org-root --accounts 111122223333,444455556666
+    """
+    ctx = click.get_current_context()
+    src = ctx.get_parameter_source
+
+    # Apply configuration defaults
+    if profile is None and src('profile') != click.core.ParameterSource.COMMANDLINE:
+        profile = get_config('profile')
+
+    if role_name is None:
+        role_name = get_config('org_role_name') or DEFAULT_ROLE_NAME
+
+    if concurrency is None:
+        cfg_c = get_config('org_concurrency')
+        concurrency = int(cfg_c) if cfg_c and str(cfg_c).isdigit() else None
+
+    if workers is None:
+        cfg_w = get_config('org_workers')
+        workers = int(cfg_w) if cfg_w and str(cfg_w).isdigit() else DEFAULT_TOTAL_CONCURRENCY
+
+    if processes is None:
+        cfg_p = get_config('org_processes')
+        processes = int(cfg_p) if cfg_p and str(cfg_p).isdigit() else None
+
+    if db is None:
+        db = get_config('db')
+
+    if not exclude_defaults and src('exclude_defaults') != click.core.ParameterSource.COMMANDLINE:
+        exclude_defaults = get_config('exclude_defaults', '').lower() in ('true', '1', 'yes')
+
+    # Parse and validate services early
+    services_list: Optional[List[str]] = None
+    if services:
+        services_list = []
+        for s in services:
+            services_list.extend([x.strip() for x in s.split(',')])
+        try:
+            validate_services(services_list)
+        except ValueError as e:
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(1)
+    elif src('services') != click.core.ParameterSource.COMMANDLINE:
+        cfg_services = get_config('services')
+        if cfg_services:
+            services_list = [s.strip() for s in cfg_services.split(',') if s.strip()]
+            try:
+                validate_services(services_list)
+            except ValueError as e:
+                click.echo(f"Config services error: {e}", err=True)
+                sys.exit(1)
+
+    # Parse regions
+    regions_list: Optional[List[str]] = None
+    if region:
+        regions_list = []
+        for r in region:
+            regions_list.extend([x.strip() for x in r.split(',')])
+    elif src('region') != click.core.ParameterSource.COMMANDLINE:
+        cfg_regions = get_config('regions')
+        if cfg_regions:
+            regions_list = [r.strip() for r in cfg_regions.split(',') if r.strip()]
+
+    # Parse account filters
+    include_accounts: Optional[List[str]] = None
+    if accounts:
+        include_accounts = []
+        for a in accounts:
+            include_accounts.extend([x.strip() for x in a.split(',') if x.strip()])
+        if not include_accounts:
+            include_accounts = None
+
+    exclude_accounts: Optional[List[str]] = None
+    if exclude:
+        exclude_accounts = []
+        for e in exclude:
+            exclude_accounts.extend([x.strip() for x in e.split(',') if x.strip()])
+        if not exclude_accounts:
+            exclude_accounts = None
+
+    # Create root session
+    try:
+        root_session = create_session(profile_name=profile)
+    except Exception as e:
+        click.echo(f"Error creating AWS session: {e}", err=True)
+        sys.exit(1)
+
+    # Validate root credentials
+    if not quiet:
+        click.echo(f"\nValidating AWS Organizations credentials (profile: {profile or 'default'})...")
+
+    try:
+        identity = validate_credentials(root_session)
+        account_id = identity['account_id']
+        account_alias = get_account_alias(root_session)
+
+        if not quiet:
+            label = f"{account_alias} ({account_id})" if account_alias else account_id
+            click.echo(f"  Management/Payer Account: {label}")
+            click.echo(f"  Caller Identity ARN    : {identity['arn']}")
+    except ValueError as e:
+        click.echo(f"Error validating credentials: {e}", err=True)
+        sys.exit(1)
+
+    # Discover organization accounts
+    if not quiet:
+        click.echo("\nDiscovering AWS Organization member accounts...")
+
+    try:
+        discovered_accounts = discover_org_accounts(
+            root_session=root_session,
+            ou_filter=ou,
+            include_accounts=include_accounts,
+            exclude_accounts=exclude_accounts,
+            db_path=db,
+        )
+    except ValueError as e:
+        click.echo(f"\n{e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error discovering organization accounts: {e}", err=True)
+        sys.exit(1)
+
+    if not discovered_accounts:
+        click.echo("No active member accounts found matching the criteria.", err=True)
+        sys.exit(1)
+
+    if not quiet:
+        click.echo(f"  Found {len(discovered_accounts)} active account(s) to process.")
+
+    # Scoped session policy for least privilege
+    policy_str: Optional[str] = None
+    if session_policy:
+        policy_str = build_scoped_session_policy(services=services_list)
+        if not quiet:
+            click.echo("  Least-Privilege Session Policy: ACTIVE (Restricted to read-only metadata, denied data APIs)")
+    else:
+        if not quiet:
+            click.echo("  Least-Privilege Session Policy: DISABLED (Assuming member role with full permissions)")
+
+    # Run orchestrator
+    orchestrator = OrgInventoryOrchestrator(
+        root_session=root_session,
+        role_name=role_name,
+        session_policy=policy_str,
+        external_id=external_id,
+        account_concurrency=concurrency,
+        total_concurrency=workers,
+        processes=processes,
+        services=services_list,
+        regions=regions_list,
+        exclude_defaults=exclude_defaults,
+        include_global=include_global,
+        tag_filters=list(tag) if tag else None,
+        db_path=db,
+        no_db=no_db,
+        resume=resume,
+        quiet=quiet,
+    )
+
+    try:
+        results = orchestrator.execute(discovered_accounts, dry_run=dry_run)
+    except KeyboardInterrupt:
+        click.echo("\nScan interrupted by user.", err=True)
+        sys.exit(130)
+    except Exception as e:
+        click.echo(f"\nOrganization scan error: {e}", err=True)
+        sys.exit(1)
+
+    if dry_run and results.get("inaccessible", 0) > 0:
+        sys.exit(1)
+    if not dry_run and results.get("partial_accounts", 0) > 0:
+        sys.exit(2)
+
 
 @main.command()
 @click.argument('sql', required=False, default=None)
@@ -495,6 +767,7 @@ def query(sql, query_name, query_file, list_queries, show_name, params, account,
         sys.exit(1)
 
     if fmt == 'table':
+        columns, rows = _label_account_column(conn, columns, rows)
         click.echo(format_table(columns, rows))
     elif fmt == 'json':
         click.echo(json.dumps([dict(zip(columns, r)) for r in rows], indent=2, default=str))
@@ -584,6 +857,7 @@ def ask(question, account, scan_sel, db):
 
     try:
         columns, rows = run_query(conn, sql)
+        columns, rows = _label_account_column(conn, columns, rows)
         click.echo(format_table(columns, rows))
         click.echo(f"\n({len(rows)} rows)")
     except Exception as e:
@@ -676,6 +950,7 @@ def examples(service, number, search_term, db):
 
     try:
         columns, rows = run_query(conn, sql)
+        columns, rows = _label_account_column(conn, columns, rows)
         click.echo(format_table(columns, rows))
         click.echo(f"\n({len(rows)} rows)")
     except Exception as e:

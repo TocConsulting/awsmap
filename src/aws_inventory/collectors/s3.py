@@ -6,6 +6,11 @@ import boto3
 from typing import List, Dict, Any, Optional
 
 from aws_inventory.auth import get_enabled_regions
+from aws_inventory.parallel import bounded_map
+
+# Per-bucket calls are independent; a small pool keeps large accounts from
+# turning the single S3 task into the slowest task of the scan.
+_S3_ENRICH_WORKERS = 4
 
 
 def collect_s3_resources(session: boto3.Session, region: Optional[str], account_id: str, filter_regions: Optional[List[str]] = None) -> List[Dict[str, Any]]:
@@ -31,7 +36,7 @@ def collect_s3_resources(session: boto3.Session, region: Optional[str], account_
     except Exception:
         return resources
 
-    for bucket in buckets:
+    def _bucket(bucket: Dict[str, Any]) -> Dict[str, Any]:
         bucket_name = bucket['Name']
         creation_date = bucket.get('CreationDate')
 
@@ -86,7 +91,7 @@ def collect_s3_resources(session: boto3.Session, region: Optional[str], account_
         except Exception:
             pass
 
-        resources.append({
+        return {
             'service': 's3',
             'type': 'bucket',
             'id': bucket_name,
@@ -100,7 +105,9 @@ def collect_s3_resources(session: boto3.Session, region: Optional[str], account_
                 'public_access_blocked': public_access_blocked,
             },
             'tags': tags
-        })
+        }
+
+    resources.extend(bounded_map(_bucket, buckets, _S3_ENRICH_WORKERS))
 
     # S3 Tables - regional service, use filter_regions if provided
     try:
@@ -108,11 +115,12 @@ def collect_s3_resources(session: boto3.Session, region: Optional[str], account_
     except Exception:
         table_regions = []
 
-    for table_region in table_regions:
+    def _tables_in_region(table_region: str) -> List[Dict[str, Any]]:
+        region_resources: List[Dict[str, Any]] = []
         try:
             s3tables = session.client('s3tables', region_name=table_region)
         except Exception:
-            continue
+            return region_resources
 
         # List table buckets
         table_buckets = []
@@ -121,7 +129,7 @@ def collect_s3_resources(session: boto3.Session, region: Optional[str], account_
             for page in paginator.paginate():
                 table_buckets.extend(page.get('tableBuckets', []))
         except Exception:
-            continue
+            return region_resources
 
         for tb in table_buckets:
             tb_arn = tb['arn']
@@ -135,7 +143,7 @@ def collect_s3_resources(session: boto3.Session, region: Optional[str], account_
             except Exception:
                 pass
 
-            resources.append({
+            region_resources.append({
                 'service': 's3',
                 'type': 'table-bucket',
                 'id': tb_name,
@@ -160,7 +168,7 @@ def collect_s3_resources(session: boto3.Session, region: Optional[str], account_
                         ns_name_str = '/'.join(ns_name) if isinstance(ns_name, list) else str(ns_name)
                         ns_id = ns.get('namespaceId', ns_name_str)
 
-                        resources.append({
+                        region_resources.append({
                             'service': 's3',
                             'type': 'namespace',
                             'id': ns_id,
@@ -198,7 +206,7 @@ def collect_s3_resources(session: boto3.Session, region: Optional[str], account_
                         except Exception:
                             pass
 
-                        resources.append({
+                        region_resources.append({
                             'service': 's3',
                             'type': 'table',
                             'id': tbl_name,
@@ -220,5 +228,13 @@ def collect_s3_resources(session: boto3.Session, region: Optional[str], account_
                         })
             except Exception:
                 pass
+        return region_resources
+
+    # Only probe regions where S3 Tables is offered (avoids DNS failures and retries)
+    from aws_inventory.collector import supported_regions
+    table_regions = supported_regions('s3tables', list(table_regions))
+
+    for batch in bounded_map(_tables_in_region, table_regions, _S3_ENRICH_WORKERS):
+        resources.extend(batch)
 
     return resources

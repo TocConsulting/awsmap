@@ -22,6 +22,10 @@ def collect_vpc_lattice_resources(session: boto3.Session, region: Optional[str],
     resources = []
     lattice = session.client('vpc-lattice', region_name=region)
 
+    # Access log subscriptions are listed per owning resource (a service network
+    # or a service), so their identifiers are collected here as they are found.
+    log_sub_targets = []
+
     # Service Networks
     try:
         paginator = lattice.get_paginator('list_service_networks')
@@ -30,6 +34,7 @@ def collect_vpc_lattice_resources(session: boto3.Session, region: Optional[str],
                 sn_id = sn['id']
                 sn_arn = sn['arn']
                 sn_name = sn.get('name', sn_id)
+                log_sub_targets.append(sn_id)
 
                 details = {
                     'status': sn.get('status'),
@@ -152,6 +157,7 @@ def collect_vpc_lattice_resources(session: boto3.Session, region: Optional[str],
                 svc_id = svc['id']
                 svc_arn = svc['arn']
                 svc_name = svc.get('name', svc_id)
+                log_sub_targets.append(svc_id)
 
                 details = {
                     'status': svc.get('status'),
@@ -335,41 +341,44 @@ def collect_vpc_lattice_resources(session: boto3.Session, region: Optional[str],
     except Exception:
         pass
 
-    # Access Log Subscriptions
-    try:
-        paginator = lattice.get_paginator('list_access_log_subscriptions')
-        for page in paginator.paginate():
-            for sub in page.get('items', []):
-                sub_id = sub['id']
-                sub_arn = sub['arn']
+    # Access Log Subscriptions. list_access_log_subscriptions requires the
+    # identifier of the owning resource (service network or service), so it is
+    # queried once per collected service network and service.
+    for target_id in log_sub_targets:
+        try:
+            paginator = lattice.get_paginator('list_access_log_subscriptions')
+            for page in paginator.paginate(resourceIdentifier=target_id):
+                for sub in page.get('items', []):
+                    sub_id = sub['id']
+                    sub_arn = sub['arn']
 
-                details = {
-                    'resource_id': sub.get('resourceId'),
-                    'resource_arn': sub.get('resourceArn'),
-                    'destination_arn': sub.get('destinationArn'),
-                    'created_at': str(sub.get('createdAt', '')),
-                    'last_updated_at': str(sub.get('lastUpdatedAt', '')),
-                }
+                    details = {
+                        'resource_id': sub.get('resourceId'),
+                        'resource_arn': sub.get('resourceArn'),
+                        'destination_arn': sub.get('destinationArn'),
+                        'created_at': str(sub.get('createdAt', '')),
+                        'last_updated_at': str(sub.get('lastUpdatedAt', '')),
+                    }
 
-                # Get tags
-                tags = {}
-                try:
-                    tag_response = lattice.list_tags_for_resource(resourceArn=sub_arn)
-                    tags = tag_response.get('tags', {})
-                except Exception:
-                    pass
+                    # Get tags
+                    tags = {}
+                    try:
+                        tag_response = lattice.list_tags_for_resource(resourceArn=sub_arn)
+                        tags = tag_response.get('tags', {})
+                    except Exception:
+                        pass
 
-                resources.append({
-                    'service': 'vpc-lattice',
-                    'type': 'access-log-subscription',
-                    'id': sub_id,
-                    'arn': sub_arn,
-                    'name': sub_id,
-                    'region': region,
-                    'details': details,
-                    'tags': tags
-                })
-    except Exception:
-        pass
+                    resources.append({
+                        'service': 'vpc-lattice',
+                        'type': 'access-log-subscription',
+                        'id': sub_id,
+                        'arn': sub_arn,
+                        'name': sub_id,
+                        'region': region,
+                        'details': details,
+                        'tags': tags
+                    })
+        except Exception:
+            pass
 
     return resources
