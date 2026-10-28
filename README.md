@@ -8,7 +8,7 @@
   <a href="https://hub.docker.com/r/tarekcheikh/awsmap"><img src="https://img.shields.io/docker/v/tarekcheikh/awsmap?label=docker" alt="Docker"></a>
   <a href="https://hub.docker.com/r/tarekcheikh/awsmap"><img src="https://img.shields.io/docker/pulls/tarekcheikh/awsmap" alt="Docker Pulls"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-brightgreen.svg" alt="License: MIT"></a>
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="Python 3.9+"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
   <a href="https://aws.amazon.com/"><img src="https://img.shields.io/badge/AWS-150%2B_Services-orange.svg" alt="AWS Services"></a>
 </p>
 
@@ -48,7 +48,7 @@ A fast, comprehensive tool for mapping and inventorying AWS resources across 150
 pip install awsmap
 ```
 
-**Requirements:** Python 3.9+, AWS credentials configured
+**Requirements:** Python 3.11+, AWS credentials configured
 
 ### Docker
 
